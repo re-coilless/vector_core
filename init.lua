@@ -1,0 +1,4 @@
+--CharacterData/CharacterCollision dont_update_velocity_and_xform - use this for custom speed controller
+--redo all controls the same way they are in iota
+--redo wand holder
+--full vanilla feature-parity animation controller with events
