@@ -5,13 +5,16 @@ else return end
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
+    local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
+    if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
+
     pen.c.vector_moment = pen.c.vector_moment or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
 
-    --controller support + make it work for any entity
+    --controller support + make it work for any entity + check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
@@ -103,7 +106,7 @@ function OnWorldPreUpdate()
         -- ComponentSetValue2( char_comp, "mVelocity", prev_x, v_y )
         -- pen.c.vector_recoil[ entity_id ] = v_x - prev_x
 
-        --recoil always applies first to the arm; above certain limit it pushes the player too
+        --recoil always applies first to the arm; above certain limit it pushes the player too; even higher values deal damage
         --tilting should be determined by strength (derived from kick damage), the higher the strength, the less is the shifting amount
 
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
@@ -125,10 +128,9 @@ function OnWorldPreUpdate()
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         new_vel = math.abs( new_vel ) < math.abs( v_x ) and v_x or new_vel
         new_vel = new_vel + ( pen.c.vector_recoil[ entity_id ] or 0 )
-
-        local decay = 0.95 --make this increase with higher mass (default is for 80kg)
-        if( ComponentGetValue2( char_comp, "is_on_slippery_ground" )) then
-            decay = 0.5*decay
+        
+        local decay = 0.95 --make this increase with higher mass (default is 2 which is considered 80kg)
+        if( ComponentGetValue2( char_comp, "is_on_slippery_ground" )) then decay = 0.5*decay
         elseif( ComponentGetValue2( char_comp, "is_on_ground" )) then decay = 0.1*decay end
         if( ComponentGetValue2( char_comp, "mCollidedHorizontally" )) then decay = 0 end
 
@@ -146,7 +148,7 @@ function OnWorldPreUpdate()
         pen.c.vector_moment[ entity_id ] = decay*new_vel
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
     end
-    
+
     --events are only reported once per unique frame
     local function vector_anim_events( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_events", "value_bool" )) then return end
@@ -195,9 +197,12 @@ function OnWorldPreUpdate()
     end
 
     local function vector_ctrl( entity_id )
-        local path = pen.magic_storage( entity_id, "vector_ctrl", "value_string" )
-        if( not( pen.vld( path ))) then return end
-        dofile( path )
+        pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
+            if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
+            local path = ComponentGetValue2( comp, "value_string" )
+            if( not( pen.vld( path ))) then return end
+            dofile( path )( entity_id )
+        end)
     end
 
     --allow injecting/overriding functions
