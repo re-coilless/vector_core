@@ -5,10 +5,11 @@ else return end
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
+    local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
+    local global_friction = "VECTOR_BASELINE_FRICTION"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
 
-    pen.c.vector_moment = pen.c.vector_moment or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
@@ -117,35 +118,48 @@ function OnWorldPreUpdate()
         pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + 5*recoil
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
-
-    --apply clamping
+    
     local function vector_momentum( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_momentum", "value_bool" )) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
         
-        local new_vel = pen.c.vector_moment[ entity_id ] or 0
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
-        new_vel = math.abs( new_vel ) < math.abs( v_x ) and v_x or new_vel
-        new_vel = new_vel + ( pen.c.vector_recoil[ entity_id ] or 0 )
+        local is_wall = ComponentGetValue2( char_comp, "mCollidedHorizontally" )
+        if( is_wall ) then v_x = (( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 )/2 end
+        v_x = v_x + ( pen.c.vector_recoil[ entity_id ] or 0 )
         
-        local decay = 0.95 --make this increase with higher mass (default is 2 which is considered 80kg)
-        if( ComponentGetValue2( char_comp, "is_on_slippery_ground" )) then decay = 0.5*decay
-        elseif( ComponentGetValue2( char_comp, "is_on_ground" )) then decay = 0.1*decay end
-        if( ComponentGetValue2( char_comp, "mCollidedHorizontally" )) then decay = 0 end
-
-        local air_speed = 1
+        local strength = 0
+        local kick_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "KickComponent" )
+        if( pen.vld( kick_comp, true )) then strength = 3*ComponentGetValue2( kick_comp, "max_force" ) end
+        if( not( ComponentGetValue2( char_comp, "is_on_ground" ))) then strength = 0 end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
-        if( pen.vld( plat_comp, true ) and ComponentGetValue2( plat_comp, "mJetpackEmitting" )) then air_speed = 5 end
+        if( pen.vld( plat_comp, true ) and ComponentGetValue2( plat_comp, "mJetpackEmitting" )) then
+            strength = ComponentGetValue2( plat_comp, "fly_velocity_x" )
+        end
+
+        local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
+        mass = ( ComponentGetValue2( char_comp, "is_on_slippery_ground" ) and 2 or 1 )*mass
+        
+        local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( pen.vld( ctrl_comp, true )) then
             local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
             local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
-            if( left or right ) then new_vel = new_vel + air_speed*( right and 1 or -1 ) end
+            if( left or right ) then
+                local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
+                v_x = v_x + force*( right and 1 or -1 )
+            end
         end
 
-        ComponentSetValue2( char_comp, "mVelocity", new_vel, v_y )
-        pen.c.vector_moment[ entity_id ] = decay*new_vel
+        local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
+        if( ComponentGetValue2( char_comp, "is_on_ground" )) then
+            local old_sign = pen.get_sign( v_x )
+            v_x = v_x - 10*pen.get_sign( v_x )*math.abs( decay )*pen.get_ratio( mass, strength )
+            if( old_sign ~= pen.get_sign( v_x )) then v_x = 0 end
+        else v_x = decay*v_x end
+
+        ComponentSetValue2( char_comp, "mVelocity", v_x, v_y )
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
     end
 
