@@ -6,6 +6,7 @@ function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
     local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
+    local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
     local global_friction = "VECTOR_BASELINE_FRICTION"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
@@ -123,10 +124,24 @@ function OnWorldPreUpdate()
         if( pen.magic_storage( entity_id, "vector_no_momentum", "value_bool" )) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
+        local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterPlatformingComponent" )
+        if( not( pen.vld( plat_comp, true ))) then return end
+        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
+        if( not( pen.vld( ctrl_comp, true ))) then return end
         
-        local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
+        local x, y = EntityGetTransform( entity_id )
+        local near_ground = RaytracePlatforms( x, y, x, y + 5 )
+        local is_ground = ComponentGetValue2( char_comp, "is_on_ground" )
         local is_wall = ComponentGetValue2( char_comp, "mCollidedHorizontally" )
-        if( is_wall ) then v_x = (( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 )/2 end
+
+        local jump = ComponentGetValue2( ctrl_comp, "mButtonDownJump" )
+        local y_transfer = is_wall and not( is_ground ) and near_ground and jump
+        local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
+
+        --do water drag manually
+        local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
+        v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
+        v_y = y_transfer and v_y - ( gravity/2 + math.abs( v_x )) or v_y
         v_x = v_x + ( pen.c.vector_recoil[ entity_id ] or 0 )
         
         local strength = 0
@@ -140,22 +155,21 @@ function OnWorldPreUpdate()
 
         local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
         mass = ( ComponentGetValue2( char_comp, "is_on_slippery_ground" ) and 2 or 1 )*mass
-        
         local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
-        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
-        if( pen.vld( ctrl_comp, true )) then
-            local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
-            local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
-            if( left or right ) then
-                local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
-                v_x = v_x + force*( right and 1 or -1 )
-            end
+        local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
+
+        local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
+        local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
+        if( left or right ) then
+            local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
+            v_x = v_x + force*( right and 1 or -1 )
         end
 
         local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
-        if( ComponentGetValue2( char_comp, "is_on_ground" )) then
-            local old_sign = pen.get_sign( v_x )
-            v_x = v_x - 10*pen.get_sign( v_x )*math.abs( decay )*pen.get_ratio( mass, strength )
+        if( is_ground ) then
+            local old_sign, k = pen.get_sign( v_x ), 10
+            if( math.abs( v_x ) < bottom_speed ) then k = k*pen.get_ratio( v_x, 2*bottom_speed ) end
+            v_x = v_x - k*pen.get_sign( v_x )*math.abs( decay )*pen.get_ratio( mass, strength )
             if( old_sign ~= pen.get_sign( v_x )) then v_x = 0 end
         else v_x = decay*v_x end
 
