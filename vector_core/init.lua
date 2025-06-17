@@ -135,13 +135,13 @@ function OnWorldPreUpdate()
         local is_wall = ComponentGetValue2( char_comp, "mCollidedHorizontally" )
 
         local jump = ComponentGetValue2( ctrl_comp, "mButtonDownJump" )
-        local y_transfer = is_wall and not( is_ground ) and near_ground and jump
         local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
-
+        local y_transfer = is_wall and near_ground and jump
+        
         --do water drag manually
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
-        v_y = y_transfer and v_y - ( gravity/2 + math.abs( v_x )) or v_y
+        v_y = y_transfer and v_y - ( gravity/2 + math.max( 50, math.abs( v_x ))) or v_y
         v_x = v_x + ( pen.c.vector_recoil[ entity_id ] or 0 )
         
         local strength = 0
