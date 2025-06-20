@@ -72,10 +72,9 @@ function OnWorldPreUpdate()
         -- mMouseDelta
     end
 
-    local function vector_recoil( entity_id )
-        pen.c.vector_recoil[ entity_id ] = 0
-
-        if( pen.magic_storage( entity_id, "vector_no_recoil", "value_bool" )) then return end
+    local function vector_handling( entity_id )
+        pen.c.vector_recoil[ entity_id ] = { 0, 0 }
+        if( pen.magic_storage( entity_id, "vector_no_handling", "value_bool" )) then return end
 
         local gun_id = pen.get_active_item( entity_id )
         if( not( pen.vld( gun_id, true ))) then return end
@@ -83,10 +82,18 @@ function OnWorldPreUpdate()
         if( not( pen.vld( arm_id, true ))) then return end
         local abil_comp = EntityGetFirstComponentIncludingDisabled( gun_id, "AbilityComponent" )
         if( not( pen.vld( abil_comp, true ))) then return end
+        local hot_comp = EntityGetFirstComponentIncludingDisabled( gun_id, "HotspotComponent", "shoot_pos" )
+        if( not( pen.vld( hot_comp, true ))) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
 
-        -- params are determined by gun and player stats
+        local gun_mass = pen.get_mass( gun_id )
+        local strength = pen.get_strength( entity_id )
+        local gun_rating = pen.magic_storage( gun_id, "vector_handling", "value_float" ) or 1
+
+        local handling_aim = 1
+        local handling_recoil = 2 - math.min( gun_rating/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
+
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp5" )
         local eid_y = arm_id.."y"
@@ -103,20 +110,30 @@ function OnWorldPreUpdate()
         
         if( ComponentGetValue2( abil_comp, "mItemRecoil" ) ~= 1 ) then return end
 
-        -- local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
-        -- local prev_x, prev_y = unpack( pen.c.vector_v_memo[ entity_id ] or { v_x, v_y })
-        -- ComponentSetValue2( char_comp, "mVelocity", prev_x, v_y )
-        -- pen.c.vector_recoil[ entity_id ] = v_x - prev_x
-
-        --recoil always applies first to the arm; above certain limit it pushes the player too; even higher values deal damage
-        --tilting should be determined by strength (derived from kick damage), the higher the strength, the less is the shifting amount
-
+        --add angular recoil based on where player looks so the gun appears to stay in one place (do this only when pointer angular delta is detected)
+        --turning around with somewhat low handling rating resets the weapon to point up
+        --make weapon fly away at high recoil
+        
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
         if( not( pen.vld( recoil_storage, true ))) then return end
-        local recoil = ComponentGetValue2( recoil_storage, "value_float" )
-        pen.c.estimator_memo[ eid_x ] = pen.c.estimator_memo[ eid_x ] - recoil
-        pen.c.estimator_memo[ eid_y ] = pen.c.estimator_memo[ eid_y ] - recoil
-        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + 5*recoil
+        local recoil = handling_recoil*ComponentGetValue2( recoil_storage, "value_float" )
+        if( pen.eps_compare( recoil, 0 )) then return end
+
+        local _,_,gun_r = EntityGetTransform( gun_id )
+        local x,y,_,s_x = EntityGetTransform( entity_id )
+        local tilt = 5*recoil*( 2 - math.min( math.max( 0.1, 100/strength - 0.2 ), 1.9 ))
+        pen.c.estimator_memo[ eid_x ] = math.max( pen.c.estimator_memo[ eid_x ] - recoil, -7 )
+        pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
+        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt
+
+        local push_force = 10*recoil/pen.get_full_mass( entity_id )
+        pen.c.vector_recoil[ entity_id ][1] = -push_force*math.cos( gun_r )
+        pen.c.vector_recoil[ entity_id ][2] = -push_force*math.sin( gun_r )
+        if( push_force > 200 ) then
+            --apply stun effect
+            EntityInflictDamage( entity_id, push_force/350, "DAMAGE_PHYSICS_HIT", "Could not handle the recoil.", "NORMAL", pen.c.vector_recoil[ entity_id ][1], pen.c.vector_recoil[ entity_id ][2], entity_id, x, y, push_force )
+        end
+
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
     
@@ -142,11 +159,9 @@ function OnWorldPreUpdate()
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
         v_y = y_transfer and v_y - ( gravity/2 + math.max( 50, math.abs( v_x ))) or v_y
-        v_x = v_x + ( pen.c.vector_recoil[ entity_id ] or 0 )
+        v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
         
-        local strength = 0
-        local kick_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "KickComponent" )
-        if( pen.vld( kick_comp, true )) then strength = 3*ComponentGetValue2( kick_comp, "max_force" ) end
+        local strength = pen.get_strength( entity_id )
         if( not( ComponentGetValue2( char_comp, "is_on_ground" ))) then strength = 0 end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( pen.vld( plat_comp, true ) and ComponentGetValue2( plat_comp, "mJetpackEmitting" )) then
@@ -177,7 +192,7 @@ function OnWorldPreUpdate()
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
     end
 
-    --events are only reported once per unique frame
+    --events are delayed
     local function vector_anim_events( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_events", "value_bool" )) then return end
         if( not( ModIsEnabled( "penman" ))) then return end
@@ -207,15 +222,10 @@ function OnWorldPreUpdate()
             local frame = math.floor( cnt/delay )
             local is_going = ( frame + 2 ) < tonumber( v.attr.frame_count )
             return pen.t.loop( v.children, function( e,c )
-                if( is_going and c.attr.on_finished ) then
-                    return
-                elseif( frame ~= tonumber( c.attr.frame )) then
-                    return
-                elseif( math.random() > ( tonumber( c.attr.probably or 1 ))) then
-                    return
-                end
-                
-                return c.attr.name
+                local on_chance = math.random() <= tonumber( c.attr.probably or 1 )
+                local on_finished = ( c.attr.on_finished == "1" ) and not( is_going )
+                local on_frame = ( c.attr.on_finished ~= "1" ) and ( frame == tonumber( c.attr.frame ))
+                if( on_chance and ( on_frame or on_finished )) then return c.attr.name end
             end)
         end)
 
@@ -237,7 +247,7 @@ function OnWorldPreUpdate()
     --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         -- vector_controls( entity_id ) -- M-Nee based controls
-        vector_recoil( entity_id ) -- advanced wand handling
+        vector_handling( entity_id ) -- advanced wand handling
         vector_momentum( entity_id ) -- custom speed controller
         vector_anim_events( entity_id ) -- animation-based events
         vector_ctrl( entity_id ) -- entity scripts within unified context
