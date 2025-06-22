@@ -11,10 +11,13 @@ function OnWorldPreUpdate()
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
 
+    pen.c.vector_cntrls = pen.c.vector_cntrls or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
+    pen.c.vector_aangle = pen.c.vector_aangle or {}
+    pen.c.vector_aasign = pen.c.vector_aasign or {}
 
     --controller support + make it work for any entity + check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
@@ -70,12 +73,13 @@ function OnWorldPreUpdate()
         -- mMousePositionRaw
         -- mMousePositionRawPrev
         -- mMouseDelta
-    end
 
+        pen.c.vector_cntrls[ entity_id ] = true
+    end
+    
     local function vector_handling( entity_id )
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
         if( pen.magic_storage( entity_id, "vector_no_handling", "value_bool" )) then return end
-
         local gun_id = pen.get_active_item( entity_id )
         if( not( pen.vld( gun_id, true ))) then return end
         local arm_id = pen.get_child( entity_id, "arm_r" )
@@ -86,20 +90,40 @@ function OnWorldPreUpdate()
         if( not( pen.vld( hot_comp, true ))) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
+        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
+        if( not( pen.vld( ctrl_comp, true ))) then return end
 
+        local aim_x, aim_y = 0, 0
+        if( not( pen.c.vector_cntrls[ entity_id ])) then
+            local m_x, m_y = DEBUG_GetMouseWorld()
+            local arm_x, arm_y = EntityGetTransform( arm_id )
+            aim_x, aim_y = m_x - arm_x, m_y - arm_y
+        else aim_x, aim_y = ComponentGetValue2( ctrl_comp, "mAimingVector" ) end
+        
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
         local gun_rating = pen.magic_storage( gun_id, "vector_handling", "value_float" ) or 1
+        local handling_aim = math.min( 1/( gun_rating*( 1 + pen.get_ratio( gun_mass, strength ))), 1 )
+        
+        local this_angle = math.atan2( aim_y, aim_x )
+        local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
+        local this_sign = pen.get_sign( aim_x )
+        local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or this_sign )
+        local aim_flip = handling_aim < 1 and 0 or 5
+        local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
+        local aim_drift = 50*aim_delta*handling_aim
+        pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
 
-        local handling_aim = 1
-        local handling_recoil = 2 - math.min( gun_rating/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
+        local arm_speed = math.max( math.floor( 8*handling_aim ), 3 )
+        local hand_speed = math.max( math.floor( 15*( handling_aim^3 )), 3 )
 
         local eid_x = arm_id.."x"
-        local ix = pen.estimate( eid_x, 0, "exp5" )
+        local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
         local eid_y = arm_id.."y"
-        local iy = pen.estimate( eid_y, 0, "exp5" )
+        local iy = pen.estimate( eid_y, 0, "exp"..arm_speed )
         local eid_r = arm_id.."r"
-        local r = pen.estimate( eid_r, 0, "exp5" )
+        pen.c.estimator_memo[ eid_r ] = ( pen.c.estimator_memo[ eid_r ] or 0 ) + aim_drift
+        local r = pen.estimate( eid_r, 0, "exp"..hand_speed )
 
         local trans_comp = EntityGetFirstComponentIncludingDisabled( arm_id, "InheritTransformComponent" )
         local _, _, isx, isy, ir = ComponentGetValue2( trans_comp, "Transform" )
@@ -107,12 +131,13 @@ function OnWorldPreUpdate()
         ComponentSetValue2( trans_comp, "only_position", false )
         ComponentSetValue2( trans_comp, "Transform", ix, iy, isx, isy, ir )
         ComponentSetValue2( abil_comp, "item_recoil_rotation_coeff", r )
-        
-        if( ComponentGetValue2( abil_comp, "mItemRecoil" ) ~= 1 ) then return end
 
-        --add angular recoil based on where player looks so the gun appears to stay in one place (do this only when pointer angular delta is detected)
-        --turning around with somewhat low handling rating resets the weapon to point up
+        if( ComponentGetValue2( abil_comp, "mItemRecoil" ) ~= 1 ) then
+            ComponentSetValue2( abil_comp, "mItemRecoil", 1 )
+        end
+
         --make weapon fly away at high recoil
+        local handling_recoil = 2 - math.min( gun_rating/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
         
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
         if( not( pen.vld( recoil_storage, true ))) then return end
@@ -126,6 +151,7 @@ function OnWorldPreUpdate()
         pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
         pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt
 
+        --handle this differently if char is not on the ground
         local push_force = 10*recoil/pen.get_full_mass( entity_id )
         pen.c.vector_recoil[ entity_id ][1] = -push_force*math.cos( gun_r )
         pen.c.vector_recoil[ entity_id ][2] = -push_force*math.sin( gun_r )
@@ -136,8 +162,9 @@ function OnWorldPreUpdate()
 
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
-    
+
     local function vector_momentum( entity_id )
+        pen.c.vector_recoil[ entity_id ] = { 0, 0 }
         if( pen.magic_storage( entity_id, "vector_no_momentum", "value_bool" )) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
@@ -156,6 +183,7 @@ function OnWorldPreUpdate()
         local y_transfer = is_wall and near_ground and jump
         
         --do water drag manually
+        --improve ledge mounting
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
         v_y = y_transfer and v_y - ( gravity/2 + math.max( 50, math.abs( v_x ))) or v_y
@@ -246,6 +274,7 @@ function OnWorldPreUpdate()
     --allow injecting/overriding functions
     --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
+        pen.c.vector_cntrls[ entity_id ] = false
         -- vector_controls( entity_id ) -- M-Nee based controls
         vector_handling( entity_id ) -- advanced wand handling
         vector_momentum( entity_id ) -- custom speed controller
@@ -254,6 +283,6 @@ function OnWorldPreUpdate()
     end)
 end
 
-function OnPlayerSpawned( hooman )
+function OnPlayerSpawned( hooman ) --repackage this as a single-line extension for vanilla
     EntityAddTag( hooman, "vector_ctrl" )
 end
