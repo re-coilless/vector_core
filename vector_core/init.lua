@@ -103,19 +103,21 @@ function OnWorldPreUpdate()
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
         local gun_rating = pen.magic_storage( gun_id, "vector_handling", "value_float" ) or 1
-        local handling_aim = math.min( 1/( gun_rating*( 1 + pen.get_ratio( gun_mass, strength ))), 1 )
-        
+        local handling_aim = math.min( 1/( 0.75 + pen.get_ratio( gun_mass, strength )), 1 )
+
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
         local this_sign = pen.get_sign( aim_x )
         local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or this_sign )
-        local aim_flip = handling_aim < 1 and 0 or 5
+        local aim_flip = handling_aim < 1 and 0 or 3*pen.get_sign( gun_rating )
         local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
         local aim_drift = 50*aim_delta*handling_aim
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
 
         local arm_speed = math.max( math.floor( 8*handling_aim ), 3 )
         local hand_speed = math.max( math.floor( 15*( handling_aim^3 )), 3 )
+
+        --move recoil to the top
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -137,8 +139,8 @@ function OnWorldPreUpdate()
         end
 
         --make weapon fly away at high recoil
-        local handling_recoil = 2 - math.min( gun_rating/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
-        
+        local handling_recoil = 2 - math.min( math.abs( gun_rating )/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
+
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
         if( not( pen.vld( recoil_storage, true ))) then return end
         local recoil = handling_recoil*ComponentGetValue2( recoil_storage, "value_float" )
@@ -182,8 +184,9 @@ function OnWorldPreUpdate()
         local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
         local y_transfer = is_wall and near_ground and jump
         
-        --do water drag manually
         --improve ledge mounting
+        --do swimming/jumping manually
+        --limit standstill acceleration even further, double tapping direction key removes limitation
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
         v_y = y_transfer and v_y - ( gravity/2 + math.max( 50, math.abs( v_x ))) or v_y
