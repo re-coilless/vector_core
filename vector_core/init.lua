@@ -93,6 +93,8 @@ function OnWorldPreUpdate()
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
 
+        if( pen.magic_storage( gun_id, "vector_no_handling", "value_bool" )) then return end
+
         local aim_x, aim_y = 0, 0
         if( not( pen.c.vector_cntrls[ entity_id ])) then
             local m_x, m_y = DEBUG_GetMouseWorld()
