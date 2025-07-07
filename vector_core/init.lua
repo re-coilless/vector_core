@@ -14,6 +14,7 @@ function OnWorldPreUpdate()
     pen.c.vector_cntrls = pen.c.vector_cntrls or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
+    pen.c.vector_mnt_mm = pen.c.vector_mnt_mm or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
     pen.c.vector_aangle = pen.c.vector_aangle or {}
@@ -120,6 +121,7 @@ function OnWorldPreUpdate()
         local hand_speed = math.max( math.floor( 15*( handling_aim^3 )), 3 )
 
         --move recoil to the top
+        --mass-based momentum for angular recoil
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -176,24 +178,48 @@ function OnWorldPreUpdate()
         if( not( pen.vld( plat_comp, true ))) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
+
+        local frame_num = GameGetFrameNum()
+        local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
+        local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
+        local jump = ComponentGetValue2( ctrl_comp, "mButtonFrameJump" ) == frame_num
         
-        local x, y = EntityGetTransform( entity_id )
+        local x, y, _, s_x = EntityGetTransform( entity_id )
+        local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
+        local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
+
+        local was_mount = pen.c.vector_mnt_mm[ entity_id ] or false
+        local flip = s_x < 0; if( left or right ) then flip = left end
+        local head_off = ComponentGetValue2( char_comp, "collision_aabb_min_y" )
+        local feet_off = ComponentGetValue2( char_comp, "collision_aabb_max_y" )
+        local body_off = ComponentGetValue2( char_comp, "collision_aabb_m"..( flip and "in" or "ax" ).."_x" )
+        feet_off, body_off = feet_off - ( was_mount and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
+
         local near_ground = RaytracePlatforms( x, y, x, y + 5 )
         local is_ground = ComponentGetValue2( char_comp, "is_on_ground" )
-        local is_wall = ComponentGetValue2( char_comp, "mCollidedHorizontally" )
-
-        local jump = ComponentGetValue2( ctrl_comp, "mButtonDownJump" )
-        local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
-        local y_transfer = is_wall and near_ground and jump
+        local is_wall = RaytracePlatforms( x + body_off, y + head_off + 1, x + body_off, y + feet_off )
+        is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         
-        --improve ledge mounting
-        --do swimming/jumping manually
         --limit standstill acceleration even further, double tapping direction key removes limitation
-        local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
-        v_x = is_wall and 0.75*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
-        v_y = y_transfer and v_y - ( gravity/2 + math.max( 50, math.abs( v_x ))) or v_y
-        v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
+        --do swimming manually; jumping angle should be based on surface normal
         
+        local is_mounting = false
+        if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
+            local check_x = x + 2*body_off
+            local chest_off = ComponentGetValue2( char_comp, "buoyancy_check_offset_y" )
+            local no_space = RaytracePlatforms( check_x, y + chest_off, check_x, y + head_off - 1 )
+            is_mounting = not( no_space or RaytracePlatforms( x, y + chest_off, check_x, y + chest_off ))
+            if( is_mounting ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
+        end
+
+        local x_decay = is_wall and not( was_mount )
+        local y_transfer = is_wall and near_ground and jump
+        v_x = x_decay and 0.9*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
+        v_y = y_transfer and v_y - ( gravity/2 + math.max( 10*gravity, math.abs( v_x ))) or v_y
+        v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
+        if( not( is_mounting ) and was_mount ) then v_x = v_x + 50*( flip and -1 or 1 ) end
+        pen.c.vector_mnt_mm[ entity_id ] = is_mounting
+
         local strength = pen.get_strength( entity_id )
         if( not( ComponentGetValue2( char_comp, "is_on_ground" ))) then strength = 0 end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
@@ -206,8 +232,6 @@ function OnWorldPreUpdate()
         local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
         local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
 
-        local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
-        local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
         if( left or right ) then
             local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
             v_x = v_x + force*( right and 1 or -1 )
@@ -289,5 +313,5 @@ function OnWorldPreUpdate()
 end
 
 function OnPlayerSpawned( hooman ) --repackage this as a single-line extension for vanilla
-    EntityAddTag( hooman, "vector_ctrl" )
+    -- EntityAddTag( hooman, "vector_ctrl" )
 end
