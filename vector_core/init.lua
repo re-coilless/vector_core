@@ -208,6 +208,7 @@ function OnWorldPreUpdate()
             local check_x = x + 2*body_off
             local chest_off = ComponentGetValue2( char_comp, "buoyancy_check_offset_y" )
             local no_space = RaytracePlatforms( check_x, y + chest_off, check_x, y + head_off - 1 )
+            no_space = no_space or RaytracePlatforms( check_x, y + head_off - 1, x, y + head_off - 1 )
             is_mounting = not( no_space or RaytracePlatforms( x, y + chest_off, check_x, y + chest_off ))
             if( is_mounting ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
         end
