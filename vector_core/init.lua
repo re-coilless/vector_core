@@ -102,26 +102,37 @@ function OnWorldPreUpdate()
             local arm_x, arm_y = EntityGetTransform( arm_id )
             aim_x, aim_y = m_x - arm_x, m_y - arm_y
         else aim_x, aim_y = ComponentGetValue2( ctrl_comp, "mAimingVector" ) end
-        
+
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
-        local gun_rating = pen.magic_storage( gun_id, "vector_handling", "value_float" ) or 1
-        local handling_aim = math.min( 1/( 0.75 + pen.get_ratio( gun_mass, strength )), 1 )
+        local gun_ratio = 100*( pen.get_ratio( gun_mass, strength ) - 0.9 )
+        local r1 = math.min( math.max( gun_ratio, 2.5 ), 10 )
+        -- 2.5 5.8 6.7 9.2 10 | 3 1.5 1 0.5 0.1
+        local h_aim = -0.52176696 + ( -711*r1/908 + 19606/997 - math.exp( -23236139/( 1000*r1 )) - 9574/( 431*( r1 - 842*math.exp( r1 )/3080117 )))/r1
+
+        local gun_rating = strength*( pen.magic_storage( gun_id, "vector_handling", "value_float" ) or 1 )
+        local r2 = math.min( math.max( math.abs( gun_rating ), 1 ), 150 )
+        -- 1 45 75 90 150 | 2 1 0.5 0.3 0.1
+        local h_recoil = 3*( r2 - 267/649 )*( 11*r2*( math.log( r2 ) - 1266/397 )/897 - 1585/219 )/911 + 145/72
+
+        -- 0.1 0.5 1 1.5 3 | 1 4 8 10 20
+        local arm_speed = math.max( math.floor( h_aim*math.exp( 461*( -h_aim - 797/996 )*( h_aim - 1757/759 )/619 ) + 1.00165701114382*math.exp( h_aim ) - 0.550125462611088 ), 3 )
+        -- 0.1 0.5 1 1.5 3 | 1 3 8 15 30
+        local hand_speed = math.max( math.floor( -463*( 733/885 - 4502*h_aim/651 )*( h_aim - 1/56 )/913 + math.pow( 508/67 - 2351*h_aim/987, h_aim ) - 86/421 ), 3 )
 
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
         local this_sign = pen.get_sign( aim_x )
         local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or this_sign )
-        local aim_flip = handling_aim < 1 and 0 or 3*pen.get_sign( gun_rating )
+        local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3
         local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
-        local aim_drift = 50*aim_delta*handling_aim
+        local aim_drift = 50*aim_delta*math.min( h_aim, 1 )
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
-
-        local arm_speed = math.max( math.floor( 8*handling_aim ), 3 )
-        local hand_speed = math.max( math.floor( 15*( handling_aim^3 )), 3 )
 
         --move recoil to the top
         --mass-based momentum for angular recoil
+        --make weapon fly away at high recoil
+        --two handed weapons
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -142,12 +153,9 @@ function OnWorldPreUpdate()
             ComponentSetValue2( abil_comp, "mItemRecoil", 1 )
         end
 
-        --make weapon fly away at high recoil
-        local handling_recoil = 2 - math.min( math.abs( gun_rating )/math.max( 0.1, 100/strength - 0.85 ), 1.9 ) --better scaling
-
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
         if( not( pen.vld( recoil_storage, true ))) then return end
-        local recoil = handling_recoil*ComponentGetValue2( recoil_storage, "value_float" )
+        local recoil = h_recoil*ComponentGetValue2( recoil_storage, "value_float" )
         if( pen.eps_compare( recoil, 0 )) then return end
 
         local _,_,gun_r = EntityGetTransform( gun_id )
