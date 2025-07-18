@@ -5,9 +5,12 @@ else return end
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
+    local global_init_speed = "VECTOR_INIT_CHAR_SPEED"
     local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
     local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
     local global_friction = "VECTOR_BASELINE_FRICTION"
+    local global_dash_delay = "VECTOR_DASH_DELAY_FRAMES"
+    local global_coyote_time = "VECTOR_COYOTE_TIME"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
 
@@ -15,8 +18,9 @@ function OnWorldPreUpdate()
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_mnt_mm = pen.c.vector_mnt_mm or {}
-    pen.c.vector_acount = pen.c.vector_acount or {}
-    pen.c.vector_a_memo = pen.c.vector_a_memo or {}
+    pen.c.vector_coytte = pen.c.vector_coytte or {}
+    pen.c.vector_dashmm = pen.c.vector_dashmm or {}
+    pen.c.vector_prcisn = pen.c.vector_prcisn or {}
     pen.c.vector_aangle = pen.c.vector_aangle or {}
     pen.c.vector_aasign = pen.c.vector_aasign or {}
 
@@ -132,7 +136,7 @@ function OnWorldPreUpdate()
         --move recoil to the top
         --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
-        --two handed weapons
+        --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -165,8 +169,9 @@ function OnWorldPreUpdate()
         pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
         pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt
 
-        --handle this differently if char is not on the ground
         local push_force = 10*recoil/pen.get_full_mass( entity_id )
+        local no_support = not( ComponentGetValue2( char_comp, "is_on_ground" ))
+        if( push_force > 1.5 and no_support ) then push_force = 25*push_force end
         pen.c.vector_recoil[ entity_id ][1] = -push_force*math.cos( gun_r )
         pen.c.vector_recoil[ entity_id ][2] = -push_force*math.sin( gun_r )
         if( push_force > 200 ) then
@@ -178,7 +183,7 @@ function OnWorldPreUpdate()
     end
 
     local function vector_momentum( entity_id )
-        pen.c.vector_recoil[ entity_id ] = { 0, 0 }
+        pen.c.vector_recoil[ entity_id ] = pen.c.vector_recoil[ entity_id ] or { 0, 0 }
         if( pen.magic_storage( entity_id, "vector_no_momentum", "value_bool" )) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
@@ -196,20 +201,28 @@ function OnWorldPreUpdate()
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
 
-        local was_mount = pen.c.vector_mnt_mm[ entity_id ] or false
+        local did_mount = pen.c.vector_mnt_mm[ entity_id ] or false
         local flip = s_x < 0; if( left or right ) then flip = left end
         local head_off = ComponentGetValue2( char_comp, "collision_aabb_min_y" )
         local feet_off = ComponentGetValue2( char_comp, "collision_aabb_max_y" )
         local body_off = ComponentGetValue2( char_comp, "collision_aabb_m"..( flip and "in" or "ax" ).."_x" )
-        feet_off, body_off = feet_off - ( was_mount and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
+        feet_off, body_off = feet_off - ( did_mount and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
+
+        local init_speed = tonumber( GlobalsGetValue( global_init_speed, "7" ))
+        local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
+        local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
+        local dash_delay = tonumber( GlobalsGetValue( global_dash_delay, "5" ))
+        local ctime = tonumber( GlobalsGetValue( global_coyote_time, "10" ))
+        local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
 
         local near_ground = RaytracePlatforms( x, y, x, y + 5 )
         local is_ground = ComponentGetValue2( char_comp, "is_on_ground" )
+        if( is_ground ) then pen.c.vector_coytte[ entity_id ] = frame_num + ctime end
+        is_ground = is_ground or (( pen.c.vector_coytte[ entity_id ] or 0 ) > frame_num )
         local is_wall = RaytracePlatforms( x + body_off, y + head_off + 1, x + body_off, y + feet_off )
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         
-        --limit standstill acceleration even further, double tapping direction key removes limitation
-        --do swimming manually; jumping angle should be based on surface normal
+        --do swimming manually; jumping angle should be based on surface normal and fully procedural
         
         local is_mounting = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
@@ -221,16 +234,15 @@ function OnWorldPreUpdate()
             if( is_mounting ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
         end
 
-        local x_decay = is_wall and not( was_mount )
+        local x_decay = is_wall and not( did_mount )
         local y_transfer = is_wall and near_ground and jump
         v_x = x_decay and 0.9*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
         v_y = y_transfer and v_y - ( gravity/2 + math.max( 10*gravity, math.abs( v_x ))) or v_y
         v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
-        if( not( is_mounting ) and was_mount ) then v_x = v_x + 50*( flip and -1 or 1 ) end
+        if( not( is_mounting ) and did_mount ) then v_x = v_x + 50*( flip and -1 or 1 ) end
         pen.c.vector_mnt_mm[ entity_id ] = is_mounting
 
-        local strength = pen.get_strength( entity_id )
-        if( not( ComponentGetValue2( char_comp, "is_on_ground" ))) then strength = 0 end
+        local strength = is_ground and pen.get_strength( entity_id ) or 0
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( pen.vld( plat_comp, true ) and ComponentGetValue2( plat_comp, "mJetpackEmitting" )) then
             strength = ComponentGetValue2( plat_comp, "fly_velocity_x" )
@@ -238,15 +250,21 @@ function OnWorldPreUpdate()
 
         local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
         mass = ( ComponentGetValue2( char_comp, "is_on_slippery_ground" ) and 2 or 1 )*mass
-        local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
-        local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
 
+        --dash is too op, add cooldown or something
+        --with this system the bhop momentum seems to decay
+        local move_frame = pen.c.vector_dashmm[ entity_id ] or frame_num
         if( left or right ) then
+            -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
             local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
-            v_x = v_x + force*( right and 1 or -1 )
-        end
+            -- if( will_dash ) then force = 5*force; pen.c.vector_prcisn[ entity_id ] = force end
 
-        local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
+            -- local prec = math.min( 1.25*( pen.c.vector_prcisn[ entity_id ] or init_speed ), 2*top_speed )
+            -- if( is_ground ) then pen.c.vector_dashmm[ entity_id ] = frame_num + dash_delay + 5 end
+            v_x = v_x + math.min( force, prec or force )*( right and 1 or -1 )
+            -- pen.c.vector_prcisn[ entity_id ] = prec
+        elseif( frame_num > move_frame ) then pen.c.vector_prcisn[ entity_id ] = init_speed end
+        
         if( is_ground ) then
             local old_sign, k = pen.get_sign( v_x ), 10
             if( math.abs( v_x ) < bottom_speed ) then k = k*pen.get_ratio( v_x, 2*bottom_speed ) end
@@ -256,9 +274,36 @@ function OnWorldPreUpdate()
 
         ComponentSetValue2( char_comp, "mVelocity", v_x, v_y )
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
+        pen.c.vector_recoil[ entity_id ] = { 0, 0 }
+    end
+    
+    local function vector_ctrl( entity_id )
+        pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
+            if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
+            local path = ComponentGetValue2( comp, "value_string" )
+            if( not( pen.vld( path ))) then return end
+            dofile( path )( entity_id )
+        end)
     end
 
-    --events are delayed
+    --allow injecting/overriding functions
+    --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
+    pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
+        pen.c.vector_cntrls[ entity_id ] = false
+        -- vector_controls( entity_id ) -- M-Nee based controls
+        vector_handling( entity_id ) -- advanced wand handling
+        vector_momentum( entity_id ) -- custom speed controller
+        vector_ctrl( entity_id ) -- entity scripts within unified context
+    end)
+end
+
+function OnWorldPostUpdate()
+    dofile_once( "mods/mnee/lib.lua" )
+
+    pen.c.vector_acount = pen.c.vector_acount or {}
+    pen.c.vector_a_memo = pen.c.vector_a_memo or {}
+
+    --one frame delay is from SpriteComp being updated by the engine
     local function vector_anim_events( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_events", "value_bool" )) then return end
         if( not( ModIsEnabled( "penman" ))) then return end
@@ -300,27 +345,11 @@ function OnWorldPreUpdate()
         pen.magic_storage( entity_id, "vector_anim_event", "value_string", event or "" )
     end
 
-    local function vector_ctrl( entity_id )
-        pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
-            if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
-            local path = ComponentGetValue2( comp, "value_string" )
-            if( not( pen.vld( path ))) then return end
-            dofile( path )( entity_id )
-        end)
-    end
-
-    --allow injecting/overriding functions
-    --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
-        pen.c.vector_cntrls[ entity_id ] = false
-        -- vector_controls( entity_id ) -- M-Nee based controls
-        vector_handling( entity_id ) -- advanced wand handling
-        vector_momentum( entity_id ) -- custom speed controller
         vector_anim_events( entity_id ) -- animation-based events
-        vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
 end
 
-function OnPlayerSpawned( hooman ) --repackage this as a single-line extension for vanilla
+function OnPlayerSpawned( hooman ) --repackage this as a single-line extension for vanilla (name's Noita OVerhaul)
     -- EntityAddTag( hooman, "vector_ctrl" )
 end
