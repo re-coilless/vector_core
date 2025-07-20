@@ -55,7 +55,7 @@ _BINDINGS[ "vector_core" ] = {
 	throw = {
 		order_id = "cb",
 		name = "Throw",
-		desc = "Dispenses of the item in hand.",
+		desc = "Disposes of the item in hand.",
 		keys = {[ "t" ] = 1 },
 	},
 	kick = {
@@ -77,14 +77,20 @@ _BINDINGS[ "vector_core" ] = {
 		desc = "Activates additional abilities of the currently held item.",
 		keys = {[ "mouse_right" ] = 1 },
 	},
-	next_item = {
+	inventory = {
 		order_id = "dc",
+		name = "Inventory",
+		desc = "Toggles the character GUI.",
+		keys = {[ "tab" ] = 1 },
+	},
+	next_item = {
+		order_id = "dd",
 		name = "Equip Next",
 		desc = "Switches to the following slot.",
 		keys = {[ "mouse_wheel_up" ] = 1 },
 	},
 	last_item = {
-		order_id = "dd",
+		order_id = "de",
 		name = "Equip Previous",
 		desc = "Switches to the preceding slot.",
 		keys = {[ "mouse_wheel_down" ] = 1 },

@@ -24,6 +24,26 @@ function OnWorldPreUpdate()
     pen.c.vector_aangle = pen.c.vector_aangle or {}
     pen.c.vector_aasign = pen.c.vector_aasign or {}
 
+    local function vector_stress( entity_id )
+        if( pen.magic_storage( entity_id, "vector_no_stress", "value_bool" )) then return end
+        local stress = pen.magic_storage( entity_id, "stress", "value_float", nil, 0 )
+
+        --apply strength boost
+        --get max_force
+        --save it as stress_force_memo
+        --write updated value to stress_force
+        --if stress_force does not match with current max_force, add delta to stress_force_memo
+        
+        --degrades linearly, is uncapped but above certain values degrades exponentially
+
+        --check for threats (use threat calc func, threat value progressively increase stress up until some value, the higher the threat, the higher this value)
+        --incoming damage (compare hp values)
+        --continous gunfire (check for fresh hooman-shot projectiles nearby)
+        --total incoming adrenaline value must always increase else the benefits of it will decay
+
+        --apply shader effects
+    end
+
     --controller support + make it work for any entity + check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
@@ -40,7 +60,7 @@ function OnWorldPreUpdate()
             
             local old_val = ComponentGetValue2( ctrl_comp, "mButtonDown"..name )
             if( is_going and not( old_val )) then
-                ComponentSetValue2( ctrl_comp, "mButtonFrame"..name, frame_num ) end
+                ComponentSetValue2( ctrl_comp, "mButtonFrame"..name, frame_num + 1 ) end
             ComponentSetValue2( ctrl_comp, "mButtonDown"..name, is_going )
             return is_going
         end
@@ -61,9 +81,13 @@ function OnWorldPreUpdate()
         update_key( "throw", "Throw" )
         update_key( "kick", "Kick" )
 
-        update_key( "fire", "Fire", "guied" ) --mButtonLastFrameFire
-        update_key( "fire_alt", "Fire2", "guied" )
-
+        local shot_main = update_key( "fire", "Fire", "guied" )
+        local shot_also = update_key( "fire_alt", "Fire2", "guied" )
+        if( shot_main or shot_also ) then
+            ComponentSetValue2( ctrl_comp, "mButtonLastFrameFire", frame_num )
+        end
+        
+        update_key( "inventory", "Inventory" )
         local will_change_r = update_key( "next_item", "ChangeItemR" )
         ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
         local will_change_l = update_key( "last_item", "ChangeItemL" )
@@ -72,12 +96,20 @@ function OnWorldPreUpdate()
         update_key( mnee.mnin( "key", "mouse_left", { mode = "guied" }), "LeftClick" )
         update_key( mnee.mnin( "key", "mouse_right", { mode = "guied" }), "RightClick" )
 
-        -- mAimingVector
-        -- mAimingVectorNormalized
-        -- mMousePosition
-        -- mMousePositionRaw
-        -- mMousePositionRawPrev
-        -- mMouseDelta
+        local ms_x, ms_y = InputGetMousePosOnScreen()
+        local _ms_x, _ms_y = ComponentGetValue2( ctrl_comp, "mMousePositionRaw" )
+        ComponentSetValue2( ctrl_comp, "mMouseDelta", ms_x - _ms_x, ms_y - _ms_y )
+        ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
+        ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
+
+        local mw_x, mw_y = DEBUG_GetMouseWorld()
+        local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
+        ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
+
+        local aim_x, aim_y = mw_x - x, mw_y - y
+        local aim = math.atan2( aim_y, aim_x )
+        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_x, aim_y )
+        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim ), math.sin( aim ))
 
         pen.c.vector_cntrls[ entity_id ] = true
     end
@@ -290,7 +322,8 @@ function OnWorldPreUpdate()
     --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         pen.c.vector_cntrls[ entity_id ] = false
-        -- vector_controls( entity_id ) -- M-Nee based controls
+        vector_stress( entity_id ) -- elaborate adrenaline system
+        vector_controls( entity_id ) -- M-Nee based controls
         vector_handling( entity_id ) -- advanced wand handling
         vector_momentum( entity_id ) -- custom speed controller
         vector_ctrl( entity_id ) -- entity scripts within unified context
@@ -300,8 +333,9 @@ end
 function OnWorldPostUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
-    pen.c.vector_acount = pen.c.vector_acount or {}
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
+    pen.c.vector_last_e = pen.c.vector_last_e or {}
+    pen.c.vector_acount = pen.c.vector_acount or {}
 
     --one frame delay is from SpriteComp being updated by the engine
     local function vector_anim_events( entity_id )
@@ -315,20 +349,28 @@ function OnWorldPostUpdate()
         local pic_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "SpriteComponent", pic_name )
         if( not( pen.vld( pic_comp, true ))) then return end
 
+        pen.c.vector_a_memo[ entity_id ] = pen.c.vector_a_memo[ entity_id ] or {}
+
+        local memo = pen.c.vector_a_memo[ entity_id ]
         local pic = ComponentGetValue2( pic_comp, "image_file" )
         local anim_name = ComponentGetValue2( pic_comp, "rect_animation" )
-        local is_new = pen.c.vector_a_memo[ entity_id ] ~= anim_name
-        if( is_new ) then pen.c.vector_acount[ entity_id ] = 0 end
-        pen.c.vector_a_memo[ entity_id ] = anim_name
+        if( pen.vld( anim_name )) then
+            local is_new = memo[1] ~= anim_name
+            if( is_new ) then pen.c.vector_acount[ entity_id ] = 0 end
+            pen.c.vector_a_memo[ entity_id ][1] = anim_name
+        end
 
         local cnt = pen.c.vector_acount[ entity_id ] or 0
-        local length = cnt + 1
+        local length, no_loop = memo[2] or ( cnt + 1 ), memo[3] or false
 
         local xml = pen.lib.nxml.parse( pen.magic_read( pic ))
         local event = pen.t.loop( xml:all_of( "RectAnimation" ), function( i,v )
             if( v.attr.name ~= anim_name ) then return end
             local delay = 60*v.attr.frame_wait
             length = delay*v.attr.frame_count
+            pen.c.vector_a_memo[ entity_id ][2] = length
+            no_loop = v.attr.loop == "0"
+            pen.c.vector_a_memo[ entity_id ][3] = no_loop
             
             local frame = math.floor( cnt/delay )
             local is_going = ( frame + 2 ) < tonumber( v.attr.frame_count )
@@ -339,10 +381,16 @@ function OnWorldPostUpdate()
                 if( on_chance and ( on_frame or on_finished )) then return c.attr.name end
             end)
         end)
-
-        pen.c.vector_acount[ entity_id ] = cnt + 1
-        if( cnt > length ) then pen.c.vector_acount[ entity_id ] = 0 end
+        
+        if( cnt < length ) then cnt = cnt + 1; pen.c.vector_acount[ entity_id ] = cnt end
+        if( cnt >= length ) then pen.c.vector_acount[ entity_id ] = no_loop and length or 0 end
         pen.magic_storage( entity_id, "vector_anim_event", "value_string", event or "" )
+        
+        if( not( pen.vld( event ))) then pen.c.vector_last_e[ entity_id ] = event end
+        if( pen.c.vector_last_e[ entity_id ] == event ) then return end
+        pen.c.vector_last_e[ entity_id ] = event
+
+        pen.magic_storage( entity_id, "vector_anim_event_frame", "value_int", GameGetFrameNum() + 1 )
     end
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
