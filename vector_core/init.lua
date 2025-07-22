@@ -41,77 +41,7 @@ function OnWorldPreUpdate()
         --continous gunfire (check for fresh hooman-shot projectiles nearby)
         --total incoming adrenaline value must always increase else the benefits of it will decay
 
-        --apply shader effects
-    end
-
-    --controller support + make it work for any entity + check for game effects
-    local function vector_controls( entity_id ) --partially stolen from IotaMP
-        if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
-        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
-        if( not( pen.vld( ctrl_comp, true ))) then return end
-        ComponentSetValue2( ctrl_comp, "enabled", false )
-
-        local frame_num = GameGetFrameNum()
-        local function update_key( mnee_id, name, mode )
-            local is_going = mnee_id
-            if( type( is_going ) ~= "boolean" ) then
-                is_going = mnee.mnin( "bind", { "vector_core", mnee_id }, { dirty = true, mode = mode })
-            end
-            
-            local old_val = ComponentGetValue2( ctrl_comp, "mButtonDown"..name )
-            if( is_going and not( old_val )) then
-                ComponentSetValue2( ctrl_comp, "mButtonFrame"..name, frame_num + 1 ) end
-            ComponentSetValue2( ctrl_comp, "mButtonDown"..name, is_going )
-            return is_going
-        end
-
-        update_key( "left", "Left" )
-        update_key( "right", "Right" )
-        update_key( "up", "Up" )
-        update_key( "down", "Down" )
-
-        update_key( "run", "Run" )
-        update_key( "jump", "Jump" )
-        if( update_key( "fly", "Fly" )) then
-            local _,new_y = EntityGetTransform( entity_id )
-            ComponentSetValue2( ctrl_comp, "mFlyingTargetY", new_y - 10 )
-        end
-
-        update_key( "interact", "Interact" )
-        update_key( "throw", "Throw" )
-        update_key( "kick", "Kick" )
-
-        local shot_main = update_key( "fire", "Fire", "guied" )
-        local shot_also = update_key( "fire_alt", "Fire2", "guied" )
-        if( shot_main or shot_also ) then
-            ComponentSetValue2( ctrl_comp, "mButtonLastFrameFire", frame_num )
-        end
-        
-        update_key( "inventory", "Inventory" )
-        local will_change_r = update_key( "next_item", "ChangeItemR" )
-        ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
-        local will_change_l = update_key( "last_item", "ChangeItemL" )
-        ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
-        
-        update_key( mnee.mnin( "key", "mouse_left", { mode = "guied" }), "LeftClick" )
-        update_key( mnee.mnin( "key", "mouse_right", { mode = "guied" }), "RightClick" )
-
-        local ms_x, ms_y = InputGetMousePosOnScreen()
-        local _ms_x, _ms_y = ComponentGetValue2( ctrl_comp, "mMousePositionRaw" )
-        ComponentSetValue2( ctrl_comp, "mMouseDelta", ms_x - _ms_x, ms_y - _ms_y )
-        ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
-        ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
-
-        local mw_x, mw_y = DEBUG_GetMouseWorld()
-        local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
-        ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
-
-        local aim_x, aim_y = mw_x - x, mw_y - y
-        local aim = math.atan2( aim_y, aim_x )
-        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_x, aim_y )
-        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim ), math.sin( aim ))
-
-        pen.c.vector_cntrls[ entity_id ] = true
+        --apply shader effects (extreme stress increases contrast and applies red hue shift)
     end
     
     local function vector_handling( entity_id )
@@ -169,6 +99,7 @@ function OnWorldPreUpdate()
         --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
         --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
+        --intergrate mnee vector module with firearm handling, so aim actually drifts (use old method if is disabled)
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -212,6 +143,78 @@ function OnWorldPreUpdate()
         end
 
         ComponentSetValue2( recoil_storage, "value_float", 0 )
+    end
+
+    --controller support + make it work for any entity + check for game effects
+    local function vector_controls( entity_id ) --partially stolen from IotaMP
+        if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
+        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
+        if( not( pen.vld( ctrl_comp, true ))) then return end
+        ComponentSetValue2( ctrl_comp, "enabled", false )
+
+        local frame_num = GameGetFrameNum()
+        local function update_key( mnee_id, name, mode )
+            local is_going = mnee_id
+            if( type( is_going ) ~= "boolean" ) then
+                is_going = mnee.mnin( "bind", { "vector_core", mnee_id }, { dirty = true, mode = mode })
+            end
+            
+            local old_val = ComponentGetValue2( ctrl_comp, "mButtonDown"..name )
+            if( is_going and not( old_val )) then
+                ComponentSetValue2( ctrl_comp, "mButtonFrame"..name, frame_num + 1 ) end
+            ComponentSetValue2( ctrl_comp, "mButtonDown"..name, is_going )
+            return is_going
+        end
+
+        update_key( "left", "Left" )
+        update_key( "right", "Right" )
+        update_key( "up", "Up" )
+        update_key( "down", "Down" )
+
+        update_key( "run", "Run" )
+        update_key( "jump", "Jump" )
+        if( update_key( "fly", "Fly" )) then
+            local _,new_y = EntityGetTransform( entity_id )
+            ComponentSetValue2( ctrl_comp, "mFlyingTargetY", new_y - 10 )
+        end
+
+        update_key( "interact", "Interact" )
+        update_key( "throw", "Throw" )
+        update_key( "kick", "Kick" )
+
+        local shot_main = update_key( "fire", "Fire", "guied" )
+        local shot_also = update_key( "fire_alt", "Fire2", "guied" )
+        if( shot_main or shot_also ) then
+            ComponentSetValue2( ctrl_comp, "mButtonLastFrameFire", frame_num )
+        end
+        
+        update_key( "inventory", "Inventory" )
+        if( tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) ~= frame_num ) then
+            local will_change_r = update_key( "next_item", "ChangeItemR" )
+            ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
+            local will_change_l = update_key( "last_item", "ChangeItemL" )
+            ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
+        end
+        
+        update_key( mnee.mnin( "key", "mouse_left", { mode = "guied" }), "LeftClick" )
+        update_key( mnee.mnin( "key", "mouse_right", { mode = "guied" }), "RightClick" )
+
+        local ms_x, ms_y = InputGetMousePosOnScreen()
+        local _ms_x, _ms_y = ComponentGetValue2( ctrl_comp, "mMousePositionRaw" )
+        ComponentSetValue2( ctrl_comp, "mMouseDelta", ms_x - _ms_x, ms_y - _ms_y )
+        ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
+        ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
+
+        local mw_x, mw_y = DEBUG_GetMouseWorld()
+        local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
+        ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
+
+        local aim_x, aim_y = mw_x - x, mw_y - y
+        local aim = math.atan2( aim_y, aim_x )
+        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_x, aim_y )
+        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim ), math.sin( aim ))
+
+        pen.c.vector_cntrls[ entity_id ] = true
     end
 
     local function vector_momentum( entity_id )
@@ -323,8 +326,8 @@ function OnWorldPreUpdate()
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         pen.c.vector_cntrls[ entity_id ] = false
         vector_stress( entity_id ) -- elaborate adrenaline system
-        vector_controls( entity_id ) -- M-Nee based controls
         vector_handling( entity_id ) -- advanced wand handling
+        vector_controls( entity_id ) -- M-Nee based controls
         vector_momentum( entity_id ) -- custom speed controller
         vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
