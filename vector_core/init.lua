@@ -23,6 +23,7 @@ function OnWorldPreUpdate()
     pen.c.vector_prcisn = pen.c.vector_prcisn or {}
     pen.c.vector_aangle = pen.c.vector_aangle or {}
     pen.c.vector_aasign = pen.c.vector_aasign or {}
+    pen.c.vector_aaagun = pen.c.vector_aaagun or {}
 
     local function vector_stress( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_stress", "value_bool" )) then return end
@@ -47,8 +48,15 @@ function OnWorldPreUpdate()
     local function vector_handling( entity_id )
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
         if( pen.magic_storage( entity_id, "vector_no_handling", "value_bool" )) then return end
+
         local gun_id = pen.get_active_item( entity_id )
+        local is_new = gun_id ~= pen.c.vector_aaagun[ entity_id ]
+        if( is_new ) then pen.c.vector_aasign[ entity_id ] = nil end
+        pen.c.vector_aaagun[ entity_id ] = gun_id
+        
         if( not( pen.vld( gun_id, true ))) then return end
+        if( pen.magic_storage( gun_id, "vector_no_handling", "value_bool" )) then return end
+
         local arm_id = pen.get_child( entity_id, "arm_r" )
         if( not( pen.vld( arm_id, true ))) then return end
         local abil_comp = EntityGetFirstComponentIncludingDisabled( gun_id, "AbilityComponent" )
@@ -59,8 +67,6 @@ function OnWorldPreUpdate()
         if( not( pen.vld( char_comp, true ))) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
-
-        if( pen.magic_storage( gun_id, "vector_no_handling", "value_bool" )) then return end
 
         local aim_x, aim_y = 0, 0
         if( not( pen.c.vector_cntrls[ entity_id ])) then
@@ -89,7 +95,7 @@ function OnWorldPreUpdate()
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
         local this_sign = pen.get_sign( aim_x )
-        local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or this_sign )
+        local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or false )
         local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3
         local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
         local aim_drift = 50*aim_delta*math.min( h_aim, 1 )
