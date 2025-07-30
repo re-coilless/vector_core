@@ -53,7 +53,7 @@ function OnWorldPreUpdate()
         local is_new = gun_id ~= pen.c.vector_aaagun[ entity_id ]
         if( is_new ) then pen.c.vector_aasign[ entity_id ] = nil end
         pen.c.vector_aaagun[ entity_id ] = gun_id
-        
+
         if( not( pen.vld( gun_id, true ))) then return end
         if( pen.magic_storage( gun_id, "vector_no_handling", "value_bool" )) then return end
 
@@ -151,7 +151,7 @@ function OnWorldPreUpdate()
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
 
-    --controller support + make it work for any entity + check for game effects
+    --advanced controller support (with aim assist) + make it work for any entity by allowing to provide custom mnee root + check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
@@ -264,6 +264,7 @@ function OnWorldPreUpdate()
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         
         --do swimming manually; jumping angle should be based on surface normal and fully procedural
+        --reduce standstill friction is player holds down jump
         
         local is_mounting = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
@@ -318,6 +319,10 @@ function OnWorldPreUpdate()
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
     end
     
+    local function vector_tutorial( entity_id )
+        -- mobile game tier tutorial that remembers which steps were shown and doesn't show em again
+    end
+
     local function vector_ctrl( entity_id )
         pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
             if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
@@ -335,6 +340,7 @@ function OnWorldPreUpdate()
         vector_handling( entity_id ) -- advanced wand handling
         vector_controls( entity_id ) -- M-Nee based controls
         vector_momentum( entity_id ) -- custom speed controller
+        vector_tutorial( entity_id ) -- centralized modular tutorial framework
         vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
 end
@@ -345,6 +351,13 @@ function OnWorldPostUpdate()
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
     pen.c.vector_last_e = pen.c.vector_last_e or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
+    pen.c.vector_campos = pen.c.vector_campos or {}
+    pen.c.vector_aimpos = pen.c.vector_aimpos or {}
+    pen.c.vector_aimaim = pen.c.vector_aimaim or {}
+
+    local function vector_anim( entity_id )
+        -- Rib's char animation concept, make sure stains work with it
+    end
 
     --one frame delay is from SpriteComp being updated by the engine
     local function vector_anim_events( entity_id )
@@ -402,8 +415,45 @@ function OnWorldPostUpdate()
         pen.magic_storage( entity_id, "vector_anim_event_frame", "value_int", GameGetFrameNum() + 1 )
     end
 
+    local function vector_camera( entity_id )
+        if( pen.magic_storage( entity_id, "vector_no_camera", "value_bool" )) then return end
+        local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "PlatformShooterPlayerComponent" )
+        if( not( pen.vld( plat_comp, true ))) then return end
+        local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
+        if( not( pen.vld( ctrl_comp, true ))) then return end
+        ComponentSetValue2( plat_comp, "center_camera_on_this_entity", false )
+
+        local c_x, c_y = ComponentGetValueVector2( plat_comp, "mDesiredCameraPos" )
+        local old_c_x, old_c_y = unpack( pen.c.vector_campos[ entity_id ] or { c_x, c_y })
+        local m_x, m_y = DEBUG_GetMouseWorld()
+        local old_m_x, old_m_y = unpack( pen.c.vector_aimpos[ entity_id ] or { m_x, m_y })
+        local d_x, d_y = ( c_x - old_c_x ) + ( m_x - old_m_x ), ( c_y - old_c_y ) + ( m_y - old_m_y )
+
+        local d_r = math.atan2( d_y, d_x )
+        local d_l = math.sqrt( d_x^2 + d_y^2 )
+        pen.c.estimator_memo = pen.c.estimator_memo or {}
+        local eid_r, eid_l = "vector_cam_r_"..entity_id, "vector_cam_l_"..entity_id
+        pen.c.estimator_memo[ eid_r ], pen.c.estimator_memo[ eid_l ] = d_r, d_l
+        d_r, d_l = pen.estimate( eid_r, 0, "exp5" ), pen.estimate( eid_l, 0, "exp5" )
+        
+        local x, y = EntityGetTransform( entity_id )
+        local aim_x, aim_y = unpack(
+            pen.c.vector_aimaim[ entity_id ] or { ComponentGetValue2( ctrl_comp, "mAimingVector" )})
+        aim_x, aim_y = aim_x + d_l*math.cos( d_r ), aim_y + d_l*math.sin( d_r )
+        pen.c.vector_aimaim[ entity_id ] = { aim_x, aim_y }
+
+        local aim_r = math.atan2( aim_y, aim_x )
+        local aim_l = math.min( math.sqrt( aim_x^2 + aim_y^2 ), 150 )
+        c_x, c_y = x + aim_l*math.cos( aim_r ), y + aim_l*math.sin( aim_r )
+        
+        ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x, c_y )
+        pen.c.vector_campos[ entity_id ], pen.c.vector_aimpos[ entity_id ] = { c_x, c_y }, { m_x, m_y }
+    end
+
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
+        vector_anim( entity_id ) -- advanced animation controller
         vector_anim_events( entity_id ) -- animation-based events
+        -- vector_camera( entity_id ) -- responsive camera controller
     end)
 end
 
