@@ -95,15 +95,20 @@ function OnWorldPreUpdate()
         -- 0.1 0.5 1 1.5 3 | 1 3 8 15 30
         local hand_speed = math.max( math.floor( -463*( 733/885 - 4502*h_aim/651 )*( h_aim - 1/56 )/913 + math.pow( 508/67 - 2351*h_aim/987, h_aim ) - 86/421 ), 3 )
 
+        local is_advanced = pen.c.vector_cntrls[ entity_id ]
+
         local this_sign = pen.get_sign( aim_x )
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
         local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or false )
-        local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3
-        local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
-        local aim_drift = aim_delta*math.min( h_aim, 1 )*50
+        local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3*( is_advanced and this_sign or 1 )
+
+        local aim_delta = sign_flip and aim_flip or
+            ( is_advanced and 1 or this_sign )*pen.get_angular_delta( this_angle, last_angle )
+        local aim_drift = aim_delta*math.min( h_aim, 1 )
+        aim_drift = is_advanced and math.deg( aim_drift ) or 50*aim_drift
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
-        
+
         --move recoil to the top
         --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
@@ -116,15 +121,16 @@ function OnWorldPreUpdate()
         local iy = pen.estimate( eid_y, 0, "exp"..arm_speed )
         local eid_r = arm_id.."r"
         pen.c.estimator_memo[ eid_r ] = ( pen.c.estimator_memo[ eid_r ] or 0 ) + aim_drift
-        local r = pen.estimate( eid_r, 0, "exp"..hand_speed )
+        local r = pen.estimate( eid_r, 0, "exp"..(( is_advanced and 0.75 or 1 )*hand_speed ))
 
         local trans_comp = EntityGetFirstComponentIncludingDisabled( arm_id, "InheritTransformComponent" )
         local _, _, isx, isy, ir = ComponentGetValue2( trans_comp, "Transform" )
 
         ComponentSetValue2( trans_comp, "only_position", false )
         ComponentSetValue2( trans_comp, "Transform", ix, iy, isx, isy, ir )
-        ComponentSetValue2( abil_comp, "item_recoil_rotation_coeff", r )
-        -- pen.c.vector_aimrrr[ entity_id ] = this_angle - r
+        if( not( is_advanced )) then
+            ComponentSetValue2( abil_comp, "item_recoil_rotation_coeff", r ) --make sure pen.gunshot knows the angle
+        else pen.c.vector_aimrrr[ entity_id ] = this_angle - math.rad( r ) end
 
         if( ComponentGetValue2( abil_comp, "mItemRecoil" ) ~= 1 ) then
             ComponentSetValue2( abil_comp, "mItemRecoil", 1 )
@@ -140,7 +146,7 @@ function OnWorldPreUpdate()
         local tilt = 5*recoil*( 2 - math.min( math.max( 0.1, 100/strength - 0.2 ), 1.9 ))
         pen.c.estimator_memo[ eid_x ] = math.max( pen.c.estimator_memo[ eid_x ] - recoil, -7 )
         pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
-        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt -- - math.rad( tilt )
+        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + ( is_advanced and this_sign or 1 )*tilt
 
         local push_force = 10*recoil/pen.get_full_mass( entity_id )
         local no_support = not( ComponentGetValue2( char_comp, "is_on_ground" ))
@@ -340,10 +346,10 @@ function OnWorldPreUpdate()
     --allow injecting/overriding functions
     --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
-        pen.c.vector_cntrls[ entity_id ] = false
         vector_stress( entity_id ) -- elaborate adrenaline system
         vector_effect( entity_id ) -- custom status effect system
         vector_handling( entity_id ) -- advanced wand handling
+        pen.c.vector_cntrls[ entity_id ] = false
         vector_controls( entity_id ) -- M-Nee based controls
         vector_momentum( entity_id ) -- custom speed controller
         vector_tutorial( entity_id ) -- centralized modular tutorial framework
@@ -438,7 +444,7 @@ function OnWorldPostUpdate()
         local s_x, s_y = pen.get_screen_data()
         s_x, s_y = s_x/2, s_y/2
 
-        local speed, edge = 30, 20
+        local speed, edge = 30, 15
         local is_in = pen.is_inv_active()
         local is_out = (( m_x - s_x )/( s_x - edge ))^2 + (( m_y - s_y )/( s_y - edge ))^2 > 1
         if( is_in ) then d_l = d_l/25 elseif( is_out ) then d_l = off + d_l/10 else d_l, speed = d_l/4, 20 end
