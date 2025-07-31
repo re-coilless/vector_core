@@ -24,6 +24,7 @@ function OnWorldPreUpdate()
     pen.c.vector_aangle = pen.c.vector_aangle or {}
     pen.c.vector_aasign = pen.c.vector_aasign or {}
     pen.c.vector_aaagun = pen.c.vector_aaagun or {}
+    pen.c.vector_aimrrr = pen.c.vector_aimrrr or {}
 
     local function vector_stress( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_stress", "value_bool" )) then return end
@@ -44,8 +45,13 @@ function OnWorldPreUpdate()
 
         --apply shader effects (extreme stress increases contrast and applies red hue shift)
     end
+
+    local function vector_effect( entity_id )
+        -- new status effect system (maybe though HitEffectComp, thanks Extol)
+    end
     
     local function vector_handling( entity_id )
+        pen.c.vector_aimrrr[ entity_id ] = nil
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
         if( pen.magic_storage( entity_id, "vector_no_handling", "value_bool" )) then return end
 
@@ -68,12 +74,9 @@ function OnWorldPreUpdate()
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
 
-        local aim_x, aim_y = 0, 0
-        if( not( pen.c.vector_cntrls[ entity_id ])) then
-            local m_x, m_y = DEBUG_GetMouseWorld()
-            local arm_x, arm_y = EntityGetTransform( arm_id )
-            aim_x, aim_y = m_x - arm_x, m_y - arm_y
-        else aim_x, aim_y = ComponentGetValue2( ctrl_comp, "mAimingVector" ) end
+        local m_x, m_y = DEBUG_GetMouseWorld()
+        local arm_x, arm_y = EntityGetTransform( arm_id )
+        local aim_x, aim_y = m_x - arm_x, m_y - arm_y
 
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
@@ -92,15 +95,15 @@ function OnWorldPreUpdate()
         -- 0.1 0.5 1 1.5 3 | 1 3 8 15 30
         local hand_speed = math.max( math.floor( -463*( 733/885 - 4502*h_aim/651 )*( h_aim - 1/56 )/913 + math.pow( 508/67 - 2351*h_aim/987, h_aim ) - 86/421 ), 3 )
 
+        local this_sign = pen.get_sign( aim_x )
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
-        local this_sign = pen.get_sign( aim_x )
         local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or false )
         local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3
         local aim_delta = sign_flip and aim_flip or this_sign*pen.get_angular_delta( this_angle, last_angle )
-        local aim_drift = 50*aim_delta*math.min( h_aim, 1 )
+        local aim_drift = aim_delta*math.min( h_aim, 1 )*50
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
-
+        
         --move recoil to the top
         --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
@@ -121,6 +124,7 @@ function OnWorldPreUpdate()
         ComponentSetValue2( trans_comp, "only_position", false )
         ComponentSetValue2( trans_comp, "Transform", ix, iy, isx, isy, ir )
         ComponentSetValue2( abil_comp, "item_recoil_rotation_coeff", r )
+        -- pen.c.vector_aimrrr[ entity_id ] = this_angle - r
 
         if( ComponentGetValue2( abil_comp, "mItemRecoil" ) ~= 1 ) then
             ComponentSetValue2( abil_comp, "mItemRecoil", 1 )
@@ -136,7 +140,7 @@ function OnWorldPreUpdate()
         local tilt = 5*recoil*( 2 - math.min( math.max( 0.1, 100/strength - 0.2 ), 1.9 ))
         pen.c.estimator_memo[ eid_x ] = math.max( pen.c.estimator_memo[ eid_x ] - recoil, -7 )
         pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
-        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt
+        pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + tilt -- - math.rad( tilt )
 
         local push_force = 10*recoil/pen.get_full_mass( entity_id )
         local no_support = not( ComponentGetValue2( char_comp, "is_on_ground" ))
@@ -216,9 +220,10 @@ function OnWorldPreUpdate()
         ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
 
         local aim_x, aim_y = mw_x - x, mw_y - y
-        local aim = math.atan2( aim_y, aim_x )
-        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_x, aim_y )
-        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim ), math.sin( aim ))
+        local aim_l = math.sqrt( aim_x^2 + aim_y^2 )
+        local aim_r = pen.c.vector_aimrrr[ entity_id ] or math.atan2( aim_y, aim_x )
+        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim_r ), math.sin( aim_r ))
+        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
 
         pen.c.vector_cntrls[ entity_id ] = true
     end
@@ -337,6 +342,7 @@ function OnWorldPreUpdate()
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         pen.c.vector_cntrls[ entity_id ] = false
         vector_stress( entity_id ) -- elaborate adrenaline system
+        vector_effect( entity_id ) -- custom status effect system
         vector_handling( entity_id ) -- advanced wand handling
         vector_controls( entity_id ) -- M-Nee based controls
         vector_momentum( entity_id ) -- custom speed controller
@@ -351,9 +357,6 @@ function OnWorldPostUpdate()
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
     pen.c.vector_last_e = pen.c.vector_last_e or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
-    pen.c.vector_campos = pen.c.vector_campos or {}
-    pen.c.vector_aimpos = pen.c.vector_aimpos or {}
-    pen.c.vector_aimaim = pen.c.vector_aimaim or {}
 
     local function vector_anim( entity_id )
         -- Rib's char animation concept, make sure stains work with it
@@ -423,37 +426,36 @@ function OnWorldPostUpdate()
         if( not( pen.vld( ctrl_comp, true ))) then return end
         ComponentSetValue2( plat_comp, "center_camera_on_this_entity", false )
 
-        local c_x, c_y = ComponentGetValueVector2( plat_comp, "mDesiredCameraPos" )
-        local old_c_x, old_c_y = unpack( pen.c.vector_campos[ entity_id ] or { c_x, c_y })
         local m_x, m_y = DEBUG_GetMouseWorld()
-        local old_m_x, old_m_y = unpack( pen.c.vector_aimpos[ entity_id ] or { m_x, m_y })
-        local d_x, d_y = ( c_x - old_c_x ) + ( m_x - old_m_x ), ( c_y - old_c_y ) + ( m_y - old_m_y )
+        local x, y = EntityGetTransform( entity_id )
 
+        local d_x, d_y = m_x - x, m_y - y
         local d_r = math.atan2( d_y, d_x )
         local d_l = math.sqrt( d_x^2 + d_y^2 )
-        pen.c.estimator_memo = pen.c.estimator_memo or {}
-        local eid_r, eid_l = "vector_cam_r_"..entity_id, "vector_cam_l_"..entity_id
-        pen.c.estimator_memo[ eid_r ], pen.c.estimator_memo[ eid_l ] = d_r, d_l
-        d_r, d_l = pen.estimate( eid_r, 0, "exp5" ), pen.estimate( eid_l, 0, "exp5" )
+        local off = tonumber( MagicNumbersGetValue( "VIRTUAL_RESOLUTION_X" ))/3
         
-        local x, y = EntityGetTransform( entity_id )
-        local aim_x, aim_y = unpack(
-            pen.c.vector_aimaim[ entity_id ] or { ComponentGetValue2( ctrl_comp, "mAimingVector" )})
-        aim_x, aim_y = aim_x + d_l*math.cos( d_r ), aim_y + d_l*math.sin( d_r )
-        pen.c.vector_aimaim[ entity_id ] = { aim_x, aim_y }
+        local m_x, m_y = pen.get_mouse_pos()
+        local s_x, s_y = pen.get_screen_data()
+        s_x, s_y = s_x/2, s_y/2
 
-        local aim_r = math.atan2( aim_y, aim_x )
-        local aim_l = math.min( math.sqrt( aim_x^2 + aim_y^2 ), 150 )
-        c_x, c_y = x + aim_l*math.cos( aim_r ), y + aim_l*math.sin( aim_r )
+        local speed, edge = 30, 20
+        local is_in = pen.is_inv_active()
+        local is_out = (( m_x - s_x )/( s_x - edge ))^2 + (( m_y - s_y )/( s_y - edge ))^2 > 1
+        if( is_in ) then d_l = d_l/25 elseif( is_out ) then d_l = off + d_l/10 else d_l, speed = d_l/4, 20 end
         
+        --try moving it to preupdate if force overriding the cam pos is impossible with this system
+        --make is so the character never disappears from the screen
+        --if last frame was is_out, make the edge be 50
+
+        local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), "exp"..speed )
+        local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + d_l*math.sin( d_r ), "exp"..speed )
         ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x, c_y )
-        pen.c.vector_campos[ entity_id ], pen.c.vector_aimpos[ entity_id ] = { c_x, c_y }, { m_x, m_y }
     end
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         vector_anim( entity_id ) -- advanced animation controller
         vector_anim_events( entity_id ) -- animation-based events
-        -- vector_camera( entity_id ) -- responsive camera controller
+        vector_camera( entity_id ) -- responsive camera controller
     end)
 end
 
