@@ -2,6 +2,9 @@ if( ModIsEnabled( "mnee" )) then
 	ModLuaFileAppend( "mods/mnee/bindings.lua", "mods/vector_core/mnee.lua" )
 else return end
 
+--allow injecting/overriding functions
+--add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
+
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
 
@@ -13,6 +16,7 @@ function OnWorldPreUpdate()
     local global_coyote_time = "VECTOR_COYOTE_TIME"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
+    if( HasFlagPersistent( "never_spawn_this_action" )) then RemoveFlagPersistent( "never_spawn_this_action" ) end
 
     pen.c.vector_cntrls = pen.c.vector_cntrls or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
@@ -80,6 +84,7 @@ function OnWorldPreUpdate()
 
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
+
         local gun_ratio = 100*( pen.get_ratio( gun_mass, strength ) - 0.9 )
         local r1 = math.min( math.max( gun_ratio, 2.5 ), 10 )
         -- 2.5 5.8 6.7 9.2 10 | 3 1.5 1 0.5 0.1
@@ -113,7 +118,6 @@ function OnWorldPreUpdate()
         --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
         --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
-        --intergrate mnee vector module with firearm handling, so aim actually drifts (use old method if is disabled)
 
         local eid_x = arm_id.."x"
         local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
@@ -264,7 +268,7 @@ function OnWorldPreUpdate()
         local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
         local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
         local dash_delay = tonumber( GlobalsGetValue( global_dash_delay, "5" ))
-        local ctime = tonumber( GlobalsGetValue( global_coyote_time, "10" ))
+        local ctime = tonumber( GlobalsGetValue( global_coyote_time, "20" ))
         local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
 
         local near_ground = RaytracePlatforms( x, y, x, y + 5 )
@@ -276,6 +280,7 @@ function OnWorldPreUpdate()
         
         --do swimming manually; jumping angle should be based on surface normal and fully procedural
         --reduce standstill friction is player holds down jump
+        --if player times jumping with direction key opposite to v_x, flip the sign of v_x
         
         local is_mounting = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
@@ -343,15 +348,13 @@ function OnWorldPreUpdate()
         end)
     end
 
-    --allow injecting/overriding functions
-    --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
-        vector_stress( entity_id ) -- elaborate adrenaline system
-        vector_effect( entity_id ) -- custom status effect system
+        vector_stress( entity_id ) -- adrenaline system
+        vector_effect( entity_id ) -- custom status effects
         vector_handling( entity_id ) -- advanced wand handling
         pen.c.vector_cntrls[ entity_id ] = false
         vector_controls( entity_id ) -- M-Nee based controls
-        vector_momentum( entity_id ) -- custom speed controller
+        vector_momentum( entity_id ) -- momentum-based speed controller
         vector_tutorial( entity_id ) -- centralized modular tutorial framework
         vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
@@ -363,6 +366,8 @@ function OnWorldPostUpdate()
     pen.c.vector_a_memo = pen.c.vector_a_memo or {}
     pen.c.vector_last_e = pen.c.vector_last_e or {}
     pen.c.vector_acount = pen.c.vector_acount or {}
+    pen.c.vector_aimdlt = pen.c.vector_aimdlt or {}
+    pen.c.vector_aimzom = pen.c.vector_aimzom or {}
 
     local function vector_anim( entity_id )
         -- Rib's char animation concept, make sure stains work with it
@@ -424,6 +429,7 @@ function OnWorldPostUpdate()
         pen.magic_storage( entity_id, "vector_anim_event_frame", "value_int", GameGetFrameNum() + 1 )
     end
 
+    --try moving it to preupdate if force overriding the cam pos is impossible with this system
     local function vector_camera( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_camera", "value_bool" )) then return end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "PlatformShooterPlayerComponent" )
@@ -438,33 +444,43 @@ function OnWorldPostUpdate()
         local d_x, d_y = m_x - x, m_y - y
         local d_r = math.atan2( d_y, d_x )
         local d_l = math.sqrt( d_x^2 + d_y^2 )
-        local off = tonumber( MagicNumbersGetValue( "VIRTUAL_RESOLUTION_X" ))/3
         
         local m_x, m_y = pen.get_mouse_pos()
         local s_x, s_y = pen.get_screen_data()
         s_x, s_y = s_x/2, s_y/2
 
-        local speed, edge = 30, 15
-        local is_in = pen.is_inv_active()
+        local is_looking = pen.c.vector_aimzom[ entity_id ]
+        local edge, is_in = is_looking and 100 or 30, pen.is_inv_active()
         local is_out = (( m_x - s_x )/( s_x - edge ))^2 + (( m_y - s_y )/( s_y - edge ))^2 > 1
-        if( is_in ) then d_l = d_l/25 elseif( is_out ) then d_l = off + d_l/10 else d_l, speed = d_l/4, 20 end
-        
-        --try moving it to preupdate if force overriding the cam pos is impossible with this system
-        --make is so the character never disappears from the screen
-        --if last frame was is_out, make the edge be 50
+        if( not( is_out )) then pen.c.vector_aimzom[ entity_id ] = false end
 
-        local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), "exp"..speed )
-        local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + d_l*math.sin( d_r ), "exp"..speed )
+        if( not( is_in ) and is_out and not( is_looking )) then
+            local md_x, md_y = ComponentGetValue2( ctrl_comp, "mMouseDelta" )
+            local is_holding = math.sqrt( md_x^2 + md_y^2 ) < 10
+            local hold_frames = is_holding and pen.c.vector_aimdlt[ entity_id ] or 0
+            
+            is_out = hold_frames > 20
+            pen.c.vector_aimzom[ entity_id ] = is_out
+            pen.c.vector_aimdlt[ entity_id ] = hold_frames + 1
+        else pen.c.vector_aimdlt[ entity_id ] = 0 end
+
+        local off_x = tonumber( MagicNumbersGetValue( "VIRTUAL_RESOLUTION_X" ))
+        local off_y = tonumber( MagicNumbersGetValue( "VIRTUAL_RESOLUTION_Y" ))
+        if( is_in ) then d_l = d_l/25 elseif( is_out ) then d_l = off_x/3 + d_l/10 else d_l, speed = d_l/4, 20 end
+
+        local ratio = is_looking and off_y/off_x or 1
+        local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), "wgt0.1" )
+        local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + ratio*d_l*math.sin( d_r ), "wgt0.1" )
         ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x, c_y )
     end
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
-        vector_anim( entity_id ) -- advanced animation controller
+        vector_anim( entity_id ) -- layered animation controller
         vector_anim_events( entity_id ) -- animation-based events
         vector_camera( entity_id ) -- responsive camera controller
     end)
 end
 
-function OnPlayerSpawned( hooman ) --repackage this as a single-line extension for vanilla (name's Noita OVerhaul)
+function OnPlayerSpawned( hooman ) --repackage this as a part of Noita OVerhaul
     -- EntityAddTag( hooman, "vector_ctrl" )
 end
