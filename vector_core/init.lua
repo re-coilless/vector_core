@@ -4,6 +4,7 @@ else return end
 
 --allow injecting/overriding functions
 --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
+--some vector modules should be disabled by default
 
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
@@ -176,7 +177,7 @@ function OnWorldPreUpdate()
         local function update_key( mnee_id, name, mode )
             local is_going = mnee_id
             if( type( is_going ) ~= "boolean" ) then
-                is_going = mnee.mnin( "bind", { "vector_core", mnee_id }, { dirty = true, mode = mode })
+                is_going = mnee.mnin( "bind", { "vector_core", mnee_id }, { mode = mode })
             end
             
             local old_val = ComponentGetValue2( ctrl_comp, "mButtonDown"..name )
@@ -471,7 +472,14 @@ function OnWorldPostUpdate()
         local ratio = is_looking and off_y/off_x or 1
         local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), "wgt0.1" )
         local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + ratio*d_l*math.sin( d_r ), "wgt0.1" )
-        ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x, c_y )
+
+        --do straightforward split-screen system
+        local is_right = false--GameGetFrameNum()%2 == 1
+        -- local color = 255*pen.new_slider( "test1", 50, 50, pen.LAYERS.TIPS, 100 )/100
+        -- local correction = pen.new_slider( "test2", 50, 75, pen.LAYERS.TIPS, 100 )/100
+        -- pen.new_pixel( is_right and s_x or -5, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
+        -- pen.new_pixel( is_right and -5 or s_x, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
+        ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x - ( is_right and 500 or 0 ), c_y )
     end
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
@@ -481,6 +489,6 @@ function OnWorldPostUpdate()
     end)
 end
 
-function OnPlayerSpawned( hooman ) --repackage this as a part of Noita OVerhaul
+function OnPlayerSpawned( hooman ) --repackage this as a part of Noita Overhaul
     -- EntityAddTag( hooman, "vector_ctrl" )
 end

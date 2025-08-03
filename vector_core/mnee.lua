@@ -1,3 +1,9 @@
+_MNEEDATA[ "vector_core" ] = {
+	order_id = 1.1,
+	name = "HermeS Vector",
+	desc = "An assortment of actions to control your character.",
+}
+
 _BINDINGS[ "vector_core" ] = {
 	left = {
 		order_id = "aa",
@@ -27,7 +33,7 @@ _BINDINGS[ "vector_core" ] = {
 	run = {
 		order_id = "ba",
 		allow_special = true,
-		name = "Run",
+		name = "Toggle Run",
 		desc = "Makes the character move faster.",
 		keys = {[ "left_shift" ] = 1 },
 	},
