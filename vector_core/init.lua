@@ -219,22 +219,24 @@ function OnWorldPreUpdate()
         
         update_key( mnee.mnin( "key", "mouse_left", { mode = "guied" }), "LeftClick" )
         update_key( mnee.mnin( "key", "mouse_right", { mode = "guied" }), "RightClick" )
+        
+        if( frame_num - tonumber( GlobalsGetValue( pen.GLOBAL_INPUT_FRAME, "0" )) > 1 ) then
+            local ms_x, ms_y = InputGetMousePosOnScreen()
+            local _ms_x, _ms_y = ComponentGetValue2( ctrl_comp, "mMousePositionRaw" )
+            ComponentSetValue2( ctrl_comp, "mMouseDelta", ms_x - _ms_x, ms_y - _ms_y )
+            ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
+            ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
 
-        local ms_x, ms_y = InputGetMousePosOnScreen()
-        local _ms_x, _ms_y = ComponentGetValue2( ctrl_comp, "mMousePositionRaw" )
-        ComponentSetValue2( ctrl_comp, "mMouseDelta", ms_x - _ms_x, ms_y - _ms_y )
-        ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
-        ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
+            local mw_x, mw_y = DEBUG_GetMouseWorld()
+            local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
+            ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
 
-        local mw_x, mw_y = DEBUG_GetMouseWorld()
-        local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
-        ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
-
-        local aim_x, aim_y = mw_x - x, mw_y - y
-        local aim_l = math.sqrt( aim_x^2 + aim_y^2 )
-        local aim_r = pen.c.vector_aimrrr[ entity_id ] or math.atan2( aim_y, aim_x )
-        ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim_r ), math.sin( aim_r ))
-        ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
+            local aim_x, aim_y = mw_x - x, mw_y - y
+            local aim_l = math.sqrt( aim_x^2 + aim_y^2 )
+            local aim_r = pen.c.vector_aimrrr[ entity_id ] or math.atan2( aim_y, aim_x )
+            ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim_r ), math.sin( aim_r ))
+            ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
+        end
 
         pen.c.vector_cntrls[ entity_id ] = true
     end
@@ -439,10 +441,10 @@ function OnWorldPostUpdate()
         if( not( pen.vld( ctrl_comp, true ))) then return end
         ComponentSetValue2( plat_comp, "center_camera_on_this_entity", false )
 
-        local m_x, m_y = DEBUG_GetMouseWorld()
+        local _m_x, _m_y = DEBUG_GetMouseWorld()
         local x, y = EntityGetTransform( entity_id )
 
-        local d_x, d_y = m_x - x, m_y - y
+        local d_x, d_y = _m_x - x, _m_y - y
         local d_r = math.atan2( d_y, d_x )
         local d_l = math.sqrt( d_x^2 + d_y^2 )
         
@@ -454,6 +456,7 @@ function OnWorldPostUpdate()
         local edge, is_in = is_looking and 100 or 30, pen.is_inv_active()
         local is_out = (( m_x - s_x )/( s_x - edge ))^2 + (( m_y - s_y )/( s_y - edge ))^2 > 1
         if( not( is_out )) then pen.c.vector_aimzom[ entity_id ] = false end
+        is_in = is_in or ( GameGetFrameNum() - tonumber( GlobalsGetValue( pen.GLOBAL_INPUT_FRAME, "0" )) < 2 )
 
         if( not( is_in ) and is_out and not( is_looking )) then
             local md_x, md_y = ComponentGetValue2( ctrl_comp, "mMouseDelta" )
