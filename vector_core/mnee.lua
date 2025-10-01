@@ -2,32 +2,60 @@ _MNEEDATA[ "vector_core" ] = {
 	order_id = 1.1,
 	name = "HermeS Vector",
 	desc = "An assortment of actions to control your character.",
+	is_folded = true,
 }
 
 _BINDINGS[ "vector_core" ] = {
-	left = {
+	movement_v = {
+		is_hidden = true,
+		name = "Movement Vertical",
+		desc = "Controls up and down.",
+		keys = { "is_axis", "1gpd_axis_lv" },
+		keys_alt = { "is_axis", "w", "s" },
+	},
+	movement_h = {
+		is_hidden = true,
+		name = "Movement Horizontal",
+		desc = "Controls left and right.",
+		keys = { "is_axis", "1gpd_axis_lh" },
+		keys_alt = { "is_axis", "a", "d" },
+	},
+	movement = {
 		order_id = "aa",
-		name = "Move Left",
-		desc = "Translates character to the left.",
-		keys = {[ "a" ] = 1 },
+		jpad_type = "MOTION",
+		deadzone = 0.05,
+		name = "Movement",
+		desc = "Moves the character around.",
+		axes = { "movement_h", "movement_v" },
 	},
-	right = {
+
+	aim_v = {
+		is_hidden = true,
+		name = "Aim Vertical",
+		desc = "Controls up and down.",
+		keys = { "is_axis", "1gpd_axis_rv", },
+		keys_alt = { "is_axis", "NOPE", "NOPE" },
+	},
+	aim_h = {
+		is_hidden = true,
+		name = "Aim Horizontal",
+		desc = "Controls left and right.",
+		keys = { "is_axis", "1gpd_axis_rh", },
+		keys_alt = { "is_axis", "NOPE", "NOPE" },
+	},
+	aim = {
 		order_id = "ab",
-		name = "Move Right",
-		desc = "Translates character to the right.",
-		keys = {[ "d" ] = 1 },
+		jpad_type = "AIM",
+		name = "Aim",
+		desc = "Moves the crosshair around.",
+		axes = { "aim_h", "aim_v" },
 	},
-	up = {
+	halt_autoaim = {
 		order_id = "ac",
-		name = "Move Up",
-		desc = "Translates character to upwards.",
-		keys = {[ "w" ] = 1 },
-	},
-	down = {
-		order_id = "ad",
-		name = "Move Down",
-		desc = "Translates character downwards.",
-		keys = {[ "s" ] = 1 },
+		is_weak = true,
+		name = "Halt Autoaim",
+		desc = "Stops aim assists from messing up the inputs while is held.",
+		keys = {[ "1gpd_up" ] = 1, },
 	},
 	
 	run = {
@@ -36,69 +64,85 @@ _BINDINGS[ "vector_core" ] = {
 		name = "Toggle Run",
 		desc = "Makes the character move faster.",
 		keys = {[ "left_shift" ] = 1 },
+		keys_alt = {[ "1gpd_l1" ] = 1 },
 	},
 	jump = {
 		order_id = "bb",
 		name = "Jump",
 		desc = "Quickly elevates the character.",
 		keys = {[ "space" ] = 1 },
+		keys_alt = {[ "1gpd_l2" ] = 1 },
 	},
 	fly = {
 		order_id = "bc",
 		name = "Ascend",
 		desc = "Allows the character to soar.",
-		keys = {[ "space" ] = 1 },
-		keys_alt = {[ "w" ] = 1 },
+		keys = {[ "w" ] = 1 },
+		keys_alt = {[ "gpd_btn_lv_-" ] = 1 },
 	},
 
 	
 	interact = {
 		order_id = "ca",
+		is_weak = true,
 		name = "Use",
 		desc = "Interacts with the world.",
 		keys = {[ "e" ] = 1 },
+		keys_alt = {[ "1gpd_y" ] = 1 },
 	},
 	throw = {
 		order_id = "cb",
+		is_weak = true,
 		name = "Throw",
 		desc = "Disposes of the item in hand.",
 		keys = {[ "t" ] = 1 },
+		keys_alt = {[ "1gpd_b" ] = 1 },
 	},
 	kick = {
 		order_id = "cc",
+		is_weak = true,
 		name = "Kick",
 		desc = "Performs a short-ranged attack that affects world and enemies.",
 		keys = {[ "f" ] = 1 },
+		keys_alt = {[ "1gpd_a" ] = 1 },
 	},
 
 	fire = {
 		order_id = "da",
+		is_weak = true,
 		name = "Shoot Primary",
 		desc = "Activates currently held item.",
 		keys = {[ "mouse_left" ] = 1 },
+		keys_alt = {[ "1gpd_r2" ] = 1 },
 	},
 	fire_alt = {
 		order_id = "db",
 		name = "Shoot Secondary",
 		desc = "Activates additional abilities of the currently held item.",
 		keys = {[ "mouse_right" ] = 1 },
+		keys_alt = {[ "1gpd_r1" ] = 1, [ "1gpd_r2" ] = 1 },
 	},
 	inventory = {
 		order_id = "dc",
 		name = "Inventory",
 		desc = "Toggles the character GUI.",
 		keys = {[ "tab" ] = 1 },
+		keys_alt = {[ "1gpd_select" ] = 1 },
 	},
 	next_item = {
 		order_id = "dd",
+		is_weak = true,
 		name = "Equip Next",
 		desc = "Switches to the following slot.",
 		keys = {[ "mouse_wheel_up" ] = 1 },
+		keys_alt = {[ "1gpd_right" ] = 1 },
 	},
 	last_item = {
 		order_id = "de",
+		is_weak = true,
 		name = "Equip Previous",
 		desc = "Switches to the preceding slot.",
 		keys = {[ "mouse_wheel_down" ] = 1 },
+		keys_alt = {[ "1gpd_left" ] = 1 },
 	},
 }

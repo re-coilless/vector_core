@@ -4,11 +4,11 @@ else return end
 
 --allow injecting/overriding functions
 --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
---some vector modules should be disabled by default
+--most vector modules should be disabled by default
 
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
-
+    
     local global_init_speed = "VECTOR_INIT_CHAR_SPEED"
     local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
     local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
@@ -20,6 +20,8 @@ function OnWorldPreUpdate()
     if( HasFlagPersistent( "never_spawn_this_action" )) then RemoveFlagPersistent( "never_spawn_this_action" ) end
 
     pen.c.vector_cntrls = pen.c.vector_cntrls or {}
+    pen.c.vector_isjpad = pen.c.vector_isjpad or {}
+    pen.c.vector_jpdpos = pen.c.vector_jpdpos or {}
     pen.c.vector_recoil = pen.c.vector_recoil or {}
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_mnt_mm = pen.c.vector_mnt_mm or {}
@@ -79,7 +81,9 @@ function OnWorldPreUpdate()
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
 
-        local m_x, m_y = DEBUG_GetMouseWorld()
+        local jpad = pen.magic_storage( entity_id, "vector_jpad", "value_int" ) or 0
+
+        local m_x, m_y = pen.get_mouse_pos( true, jpad )
         local arm_x, arm_y = EntityGetTransform( arm_id )
         local aim_x, aim_y = m_x - arm_x, m_y - arm_y
 
@@ -165,8 +169,8 @@ function OnWorldPreUpdate()
 
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
-
-    --advanced controller support (with aim assist) + make it work for any entity by allowing to provide custom mnee root + check for game effects
+    
+    --make it work for any entity by allowing to provide custom mnee root + check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
@@ -187,36 +191,33 @@ function OnWorldPreUpdate()
             return is_going
         end
 
-        update_key( "left", "Left" )
-        update_key( "right", "Right" )
-        update_key( "up", "Up" )
-        update_key( "down", "Down" )
+        mnee.SPECIAL_KEYS[ "1gpd_r1" ], mnee.SPECIAL_KEYS[ "1gpd_l1" ] = true, true
+        mnee.SPECIAL_KEYS[ "2gpd_r1" ], mnee.SPECIAL_KEYS[ "2gpd_l1" ] = true, true
+        mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = true, true
+        mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = true, true
 
-        update_key( "run", "Run" )
-        update_key( "jump", "Jump" )
-        if( update_key( "fly", "Fly" )) then
+        local movement = mnee.mnin( "stick", { "vector_core", "movement" }, { mode = "guied" })
+        update_key( movement[1] < 0, "Left" ); update_key( movement[1] > 0, "Right" )
+        update_key( movement[2] < 0, "Up" ); update_key( movement[2] > 0, "Down" )
+
+        update_key( "run", "Run", "guied" )
+        local jump = update_key( "jump", "Jump", "guied" )
+        if( update_key( jump or mnee.mnin( "bind", { "vector_core", "fly" }, { mode = "guied" }), "Fly" )) then
             local _,new_y = EntityGetTransform( entity_id )
             ComponentSetValue2( ctrl_comp, "mFlyingTargetY", new_y - 10 )
         end
 
-        update_key( "interact", "Interact" )
-        update_key( "throw", "Throw" )
-        update_key( "kick", "Kick" )
+        update_key( "interact", "Interact", "guied" )
+        update_key( "throw", "Throw", "guied" )
+        update_key( "kick", "Kick", "guied" )
 
         local shot_main = update_key( "fire", "Fire", "guied" )
         local shot_also = update_key( "fire_alt", "Fire2", "guied" )
         if( shot_main or shot_also ) then
             ComponentSetValue2( ctrl_comp, "mButtonLastFrameFire", frame_num )
         end
-        
+
         update_key( "inventory", "Inventory" )
-        if( tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) ~= frame_num ) then
-            local will_change_r = update_key( "next_item", "ChangeItemR" )
-            ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
-            local will_change_l = update_key( "last_item", "ChangeItemL" )
-            ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
-        end
-        
         update_key( mnee.mnin( "key", "mouse_left", { mode = "guied" }), "LeftClick" )
         update_key( mnee.mnin( "key", "mouse_right", { mode = "guied" }), "RightClick" )
         
@@ -227,8 +228,36 @@ function OnWorldPreUpdate()
             ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
             ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
 
-            local mw_x, mw_y = DEBUG_GetMouseWorld()
+            local aim = mnee.mnin( "stick", { "vector_core", "aim" }, { mode = "guied" })
             local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
+            local mw_x, mw_y = x, y
+
+            local jpad = 0
+            if( pen.c.vector_isjpad[ entity_id ]) then
+                pen.c.vector_isjpad[ entity_id ] = pen.eps_compare( ms_x, _ms_x ) and pen.eps_compare( ms_y, _ms_y )
+                pen.c.vector_jpdpos[ entity_id ] = pen.c.vector_jpdpos[ entity_id ] or { 0, 0 }
+
+                jpad = mnee.bind2jpad( "vector_core", "aim_h" ) or 0
+                if( aim[1] ~= 0 ) then pen.c.vector_jpdpos[ entity_id ][1] = aim[1] end
+                if( aim[2] ~= 0 ) then pen.c.vector_jpdpos[ entity_id ][2] = aim[2] end
+
+                local off_x, off_y = unpack( pen.c.vector_jpdpos[ entity_id ])
+                local autoaim = not( mnee.mnin( "bind", { "vector_core", "halt_autoaim" }, { mode = "guied" }))
+                angle = mnee.aim_assist( entity_id,
+                    { pen.get_creature_centre( entity_id )}, math.atan2( off_y, off_x ), autoaim, shot_main, { do_lining = true })
+
+                local off = 75*math.sqrt( off_x^2 + off_y^2 )
+                mw_x, mw_y = x + off*math.cos( angle ), y + off*math.sin( angle )
+                GlobalsSetValue( pen.GLOBAL_JPAD_MWD..jpad, pen.t.pack({ mw_x, mw_y, frame_num + 3 }))
+
+                local pic_x, pic_y = pen.world2gui( mw_x, mw_y )
+                pen.new_image( pic_x, pic_y, pen.LAYERS.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
+            else
+                pen.c.vector_isjpad[ entity_id ] = aim[1] ~= 0 or aim[2] ~= 0
+                mw_x, mw_y = pen.get_mouse_pos( true )
+            end
+            
+            pen.magic_storage( entity_id, "vector_jpad", "value_int", jpad )
             ComponentSetValue2( ctrl_comp, "mMousePosition", mw_x, mw_y )
 
             local aim_x, aim_y = mw_x - x, mw_y - y
@@ -236,7 +265,21 @@ function OnWorldPreUpdate()
             local aim_r = pen.c.vector_aimrrr[ entity_id ] or math.atan2( aim_y, aim_x )
             ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim_r ), math.sin( aim_r ))
             ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
+
+            local is_guied = GlobalsGetValue( pen.GLOBAL_JPAD_FOCUS..jpad, "" ) ~= ""
+            local is_unscrolled = tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) == frame_num
+            if( not( is_guied or is_unscrolled )) then
+                local will_change_r = update_key( "next_item", "ChangeItemR" )
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
+                local will_change_l = update_key( "last_item", "ChangeItemL" )
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
+            end
         end
+
+        mnee.SPECIAL_KEYS[ "1gpd_r1" ], mnee.SPECIAL_KEYS[ "1gpd_l1" ] = nil, nil
+        mnee.SPECIAL_KEYS[ "2gpd_r1" ], mnee.SPECIAL_KEYS[ "2gpd_l1" ] = nil, nil
+        mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = nil, nil
+        mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = nil, nil
 
         pen.c.vector_cntrls[ entity_id ] = true
     end
@@ -282,9 +325,10 @@ function OnWorldPreUpdate()
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         
         --do swimming manually; jumping angle should be based on surface normal and fully procedural
-        --reduce standstill friction is player holds down jump
+        --reduce standstill friction if player holds down jump
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
-        
+        --running (walking should be pretty relaxed)
+
         local is_mounting = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
             local check_x = x + 2*body_off
@@ -339,7 +383,12 @@ function OnWorldPreUpdate()
     end
     
     local function vector_tutorial( entity_id )
-        -- mobile game tier tutorial that remembers which steps were shown and doesn't show em again
+        --darkening of the screen with circular/rectangular cutouts/highlights and input blocking everywhere but there
+        --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area)
+        --tips near the cutouts
+        --ability to skip steps
+        --ability to skip tutorial
+        --define tutorial structure through globals
     end
 
     local function vector_ctrl( entity_id )
@@ -441,14 +490,16 @@ function OnWorldPostUpdate()
         if( not( pen.vld( ctrl_comp, true ))) then return end
         ComponentSetValue2( plat_comp, "center_camera_on_this_entity", false )
 
-        local _m_x, _m_y = DEBUG_GetMouseWorld()
+        local jpad = pen.magic_storage( entity_id, "vector_jpad", "value_int" ) or 0
+
+        local _m_x, _m_y = pen.get_mouse_pos( true, jpad )
         local x, y = EntityGetTransform( entity_id )
 
         local d_x, d_y = _m_x - x, _m_y - y
         local d_r = math.atan2( d_y, d_x )
         local d_l = math.sqrt( d_x^2 + d_y^2 )
         
-        local m_x, m_y = pen.get_mouse_pos()
+        local m_x, m_y = pen.get_mouse_pos( false, jpad )
         local s_x, s_y = pen.get_screen_data()
         s_x, s_y = s_x/2, s_y/2
 
