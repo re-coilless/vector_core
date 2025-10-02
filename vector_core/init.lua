@@ -54,7 +54,7 @@ function OnWorldPreUpdate()
     end
 
     local function vector_effect( entity_id )
-        -- new status effect system (maybe though HitEffectComp, thanks Extol)
+        -- new status effect system (maybe it through HitEffectComp, thanks Extol)
     end
     
     local function vector_handling( entity_id )
@@ -170,7 +170,7 @@ function OnWorldPreUpdate()
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
     
-    --make it work for any entity by allowing to provide custom mnee root + check for game effects
+    --check for game effects
     local function vector_controls( entity_id ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
@@ -178,10 +178,11 @@ function OnWorldPreUpdate()
         ComponentSetValue2( ctrl_comp, "enabled", false )
 
         local frame_num = GameGetFrameNum()
+        local mroot = pen.magic_storage( entity_id, "vector_mroot", "value_string" ) or "vector_core"
         local function update_key( mnee_id, name, mode )
             local is_going = mnee_id
             if( type( is_going ) ~= "boolean" ) then
-                is_going = mnee.mnin( "bind", { "vector_core", mnee_id }, { mode = mode })
+                is_going = mnee.mnin( "bind", { mroot, mnee_id }, { mode = mode })
             end
             
             local old_val = ComponentGetValue2( ctrl_comp, "mButtonDown"..name )
@@ -196,13 +197,13 @@ function OnWorldPreUpdate()
         mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = true, true
         mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = true, true
 
-        local movement = mnee.mnin( "stick", { "vector_core", "movement" }, { mode = "guied" })
+        local movement = mnee.mnin( "stick", { mroot, "movement" }, { mode = "guied" })
         update_key( movement[1] < 0, "Left" ); update_key( movement[1] > 0, "Right" )
         update_key( movement[2] < 0, "Up" ); update_key( movement[2] > 0, "Down" )
 
         update_key( "run", "Run", "guied" )
         local jump = update_key( "jump", "Jump", "guied" )
-        if( update_key( jump or mnee.mnin( "bind", { "vector_core", "fly" }, { mode = "guied" }), "Fly" )) then
+        if( update_key( jump or mnee.mnin( "bind", { mroot, "fly" }, { mode = "guied" }), "Fly" )) then
             local _,new_y = EntityGetTransform( entity_id )
             ComponentSetValue2( ctrl_comp, "mFlyingTargetY", new_y - 10 )
         end
@@ -228,23 +229,31 @@ function OnWorldPreUpdate()
             ComponentSetValue2( ctrl_comp, "mMousePositionRawPrev", _ms_x, _ms_y )
             ComponentSetValue2( ctrl_comp, "mMousePositionRaw", ms_x, ms_y )
 
-            local aim = mnee.mnin( "stick", { "vector_core", "aim" }, { mode = "guied" })
+            local aim = mnee.mnin( "stick", { mroot, "aim" }, { mode = "guied" })
             local x, y = EntityGetTransform( pen.get_child( entity_id, "arm_r" ) or entity_id )
             local mw_x, mw_y = x, y
 
-            local jpad = 0
+            local jpad = mnee.bind2jpad( mroot, "aim_h" ) or 0
+            local is_guied = GlobalsGetValue( pen.GLOBAL_JPAD_FOCUS..jpad, "" ) ~= ""
+            local is_unscrolled = tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) == frame_num
+            if( not( is_guied or is_unscrolled )) then
+                local will_change_r = update_key( "next_item", "ChangeItemR" )
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
+                local will_change_l = update_key( "last_item", "ChangeItemL" )
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
+            end
+
             if( pen.c.vector_isjpad[ entity_id ]) then
                 pen.c.vector_isjpad[ entity_id ] = pen.eps_compare( ms_x, _ms_x ) and pen.eps_compare( ms_y, _ms_y )
                 pen.c.vector_jpdpos[ entity_id ] = pen.c.vector_jpdpos[ entity_id ] or { 0, 0 }
 
-                jpad = mnee.bind2jpad( "vector_core", "aim_h" ) or 0
-                if( aim[1] ~= 0 ) then pen.c.vector_jpdpos[ entity_id ][1] = aim[1] end
-                if( aim[2] ~= 0 ) then pen.c.vector_jpdpos[ entity_id ][2] = aim[2] end
+                if( math.abs( aim[1]) > 0.1 ) then pen.c.vector_jpdpos[ entity_id ][1] = aim[1] end
+                if( math.abs( aim[2]) > 0.01 ) then pen.c.vector_jpdpos[ entity_id ][2] = aim[2] end
 
                 local off_x, off_y = unpack( pen.c.vector_jpdpos[ entity_id ])
-                local autoaim = not( mnee.mnin( "bind", { "vector_core", "halt_autoaim" }, { mode = "guied" }))
-                angle = mnee.aim_assist( entity_id,
-                    { pen.get_creature_centre( entity_id )}, math.atan2( off_y, off_x ), autoaim, shot_main, { do_lining = true })
+                local autoaim = not( mnee.mnin( "bind", { mroot, "halt_autoaim" }, { mode = "guied" }))
+                angle = mnee.aim_assist( entity_id, { pen.get_creature_centre( entity_id )},
+                    math.atan2( off_y, off_x ), autoaim, shot_main, { pic = "" })
 
                 local off = 75*math.sqrt( off_x^2 + off_y^2 )
                 mw_x, mw_y = x + off*math.cos( angle ), y + off*math.sin( angle )
@@ -252,9 +261,14 @@ function OnWorldPreUpdate()
 
                 local pic_x, pic_y = pen.world2gui( mw_x, mw_y )
                 pen.new_image( pic_x, pic_y, pen.LAYERS.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
+
+                if( mnee.mnin( "bind", { mroot, "focus_aim" }, { mode = "guied" })) then
+                    pic_x, pic_y = pen.world2gui( x + 250*math.cos( angle ), y + 250*math.sin( angle )) end
+                GlobalsSetValue( pen.GLOBAL_JPAD_MUI..jpad, pen.t.pack({ pic_x, pic_y, frame_num + 3 }))
             else
                 pen.c.vector_isjpad[ entity_id ] = aim[1] ~= 0 or aim[2] ~= 0
                 mw_x, mw_y = pen.get_mouse_pos( true )
+                jpad = 0
             end
             
             pen.magic_storage( entity_id, "vector_jpad", "value_int", jpad )
@@ -265,15 +279,6 @@ function OnWorldPreUpdate()
             local aim_r = pen.c.vector_aimrrr[ entity_id ] or math.atan2( aim_y, aim_x )
             ComponentSetValue2( ctrl_comp, "mAimingVectorNormalized", math.cos( aim_r ), math.sin( aim_r ))
             ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
-
-            local is_guied = GlobalsGetValue( pen.GLOBAL_JPAD_FOCUS..jpad, "" ) ~= ""
-            local is_unscrolled = tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) == frame_num
-            if( not( is_guied or is_unscrolled )) then
-                local will_change_r = update_key( "next_item", "ChangeItemR" )
-                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
-                local will_change_l = update_key( "last_item", "ChangeItemL" )
-                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
-            end
         end
 
         mnee.SPECIAL_KEYS[ "1gpd_r1" ], mnee.SPECIAL_KEYS[ "1gpd_l1" ] = nil, nil
@@ -423,6 +428,7 @@ function OnWorldPostUpdate()
 
     local function vector_anim( entity_id )
         -- Rib's char animation concept, make sure stains work with it
+        -- check whether stains do need a comp per spritecomp or if it works as is
     end
 
     --one frame delay is from SpriteComp being updated by the engine

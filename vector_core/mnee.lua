@@ -50,8 +50,15 @@ _BINDINGS[ "vector_core" ] = {
 		desc = "Moves the crosshair around.",
 		axes = { "aim_h", "aim_v" },
 	},
-	halt_autoaim = {
+	focus_aim = {
 		order_id = "ac",
+		is_weak = true,
+		name = "Focus Aim",
+		desc = "Shift the camera towards the aiming direction.",
+		keys = {[ "1gpd_down" ] = 1, },
+	},
+	halt_autoaim = {
+		order_id = "ad",
 		is_weak = true,
 		name = "Halt Autoaim",
 		desc = "Stops aim assists from messing up the inputs while is held.",
