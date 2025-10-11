@@ -90,7 +90,7 @@ function OnWorldPreUpdate()
         local gun_mass = pen.get_mass( gun_id )
         local strength = pen.get_strength( entity_id )
 
-        local gun_ratio = 100*( pen.get_ratio( gun_mass, strength ) - 0.9 )
+        local gun_ratio = 100*( pen.rat( gun_mass, strength ) - 0.9 )
         local r1 = math.min( math.max( gun_ratio, 2.5 ), 10 )
         -- 2.5 5.8 6.7 9.2 10 | 3 1.5 1 0.5 0.1
         local h_aim = -0.52176696 + ( -711*r1/908 + 19606/997 - math.exp( -23236139/( 1000*r1 )) - 9574/( 431*( r1 - 842*math.exp( r1 )/3080117 )))/r1
@@ -107,14 +107,14 @@ function OnWorldPreUpdate()
 
         local is_advanced = pen.c.vector_cntrls[ entity_id ]
 
-        local this_sign = pen.get_sign( aim_x )
+        local this_sign = pen.sgn( aim_x )
         local this_angle = math.atan2( aim_y, aim_x )
         local last_angle = pen.c.vector_aangle[ entity_id ] or this_angle
         local sign_flip = this_sign ~= ( pen.c.vector_aasign[ entity_id ] or false )
         local aim_flip = ( h_aim < 0.9 or gun_rating < 0 ) and 0 or 3*( is_advanced and this_sign or 1 )
 
         local aim_delta = sign_flip and aim_flip or
-            ( is_advanced and 1 or this_sign )*pen.get_angular_delta( this_angle, last_angle )
+            ( is_advanced and 1 or this_sign )*pen.adt( this_angle, last_angle )
         local aim_drift = aim_delta*math.min( h_aim, 1 )
         aim_drift = is_advanced and math.deg( aim_drift ) or 50*aim_drift
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
@@ -148,7 +148,7 @@ function OnWorldPreUpdate()
         local recoil_storage = pen.magic_storage( gun_id, "recoil" )
         if( not( pen.vld( recoil_storage, true ))) then return end
         local recoil = h_recoil*ComponentGetValue2( recoil_storage, "value_float" )
-        if( pen.eps_compare( recoil, 0 )) then return end
+        if( pen.epc( recoil, 0 )) then return end
 
         local _,_,gun_r = EntityGetTransform( gun_id )
         local x,y,_,s_x = EntityGetTransform( entity_id )
@@ -244,7 +244,7 @@ function OnWorldPreUpdate()
             end
 
             if( pen.c.vector_isjpad[ entity_id ]) then
-                pen.c.vector_isjpad[ entity_id ] = pen.eps_compare( ms_x, _ms_x ) and pen.eps_compare( ms_y, _ms_y )
+                pen.c.vector_isjpad[ entity_id ] = pen.epc( ms_x, _ms_x ) and pen.epc( ms_y, _ms_y )
                 pen.c.vector_jpdpos[ entity_id ] = pen.c.vector_jpdpos[ entity_id ] or { 0, 0 }
 
                 if( math.abs( aim[1]) > 0.1 ) then pen.c.vector_jpdpos[ entity_id ][1] = aim[1] end
@@ -260,7 +260,7 @@ function OnWorldPreUpdate()
                 GlobalsSetValue( pen.GLOBAL_JPAD_MWD..jpad, pen.t.pack({ mw_x, mw_y, frame_num + 3 }))
 
                 local pic_x, pic_y = pen.world2gui( mw_x, mw_y )
-                pen.new_image( pic_x, pic_y, pen.LAYERS.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
+                pen.new.image( pic_x, pic_y, pen.LAYERS.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
 
                 if( mnee.mnin( "bind", { mroot, "focus_aim" }, { mode = "guied" })) then
                     pic_x, pic_y = pen.world2gui( x + 250*math.cos( angle ), y + 250*math.sin( angle )) end
@@ -366,7 +366,7 @@ function OnWorldPreUpdate()
         local move_frame = pen.c.vector_dashmm[ entity_id ] or frame_num
         if( left or right ) then
             -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
-            local force = strength*pen.get_ratio( v_x, top_speed )*pen.get_ratio( mass, strength )
+            local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
             -- if( will_dash ) then force = 5*force; pen.c.vector_prcisn[ entity_id ] = force end
 
             -- local prec = math.min( 1.25*( pen.c.vector_prcisn[ entity_id ] or init_speed ), 2*top_speed )
@@ -376,10 +376,10 @@ function OnWorldPreUpdate()
         elseif( frame_num > move_frame ) then pen.c.vector_prcisn[ entity_id ] = init_speed end
         
         if( is_ground ) then
-            local old_sign, k = pen.get_sign( v_x ), 10
-            if( math.abs( v_x ) < bottom_speed ) then k = k*pen.get_ratio( v_x, 2*bottom_speed ) end
-            v_x = v_x - k*pen.get_sign( v_x )*math.abs( decay )*pen.get_ratio( mass, strength )
-            if( old_sign ~= pen.get_sign( v_x )) then v_x = 0 end
+            local old_sign, k = pen.sgn( v_x ), 10
+            if( math.abs( v_x ) < bottom_speed ) then k = k*pen.rat( v_x, 2*bottom_speed ) end
+            v_x = v_x - k*pen.sgn( v_x )*math.abs( decay )*pen.rat( mass, strength )
+            if( old_sign ~= pen.sgn( v_x )) then v_x = 0 end
         else v_x = decay*v_x end
 
         ComponentSetValue2( char_comp, "mVelocity", v_x, v_y )
@@ -429,14 +429,14 @@ function OnWorldPostUpdate()
     local function vector_anim( entity_id )
         -- Rib's char animation concept, make sure stains work with it
         -- check whether stains do need a comp per spritecomp or if it works as is
+        -- should also include fully procedural animation system (manipulates child objects tagged as limbs)
     end
 
     --one frame delay is from SpriteComp being updated by the engine
     local function vector_anim_events( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_events", "value_bool" )) then return end
-        if( not( ModIsEnabled( "penman" ))) then return end
-        dofile_once( "mods/penman/_libman.lua" )
-
+        if( not( pen.vld( pen.lib.nxml ))) then return end
+        
         local anim_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "SpriteAnimatorComponent" )
         if( not( pen.vld( anim_comp, true ))) then return end
         local pic_name = ComponentGetValue2( anim_comp, "target_sprite_comp_name" )
@@ -510,7 +510,8 @@ function OnWorldPostUpdate()
         s_x, s_y = s_x/2, s_y/2
 
         local is_looking = pen.c.vector_aimzom[ entity_id ]
-        local edge, is_in = is_looking and 100 or 30, pen.is_inv_active()
+        local is_guied = GlobalsGetValue( pen.GLOBAL_JPAD_FOCUS..jpad, "" ) ~= ""
+        local edge, is_in = is_looking and 100 or 30, pen.is_inv_active() or is_guied
         local is_out = (( m_x - s_x )/( s_x - edge ))^2 + (( m_y - s_y )/( s_y - edge ))^2 > 1
         if( not( is_out )) then pen.c.vector_aimzom[ entity_id ] = false end
         is_in = is_in or ( GameGetFrameNum() - tonumber( GlobalsGetValue( pen.GLOBAL_INPUT_FRAME, "0" )) < 2 )
@@ -535,10 +536,10 @@ function OnWorldPostUpdate()
 
         --do straightforward split-screen system
         local is_right = false--GameGetFrameNum()%2 == 1
-        -- local color = 255*pen.new_slider( "test1", 50, 50, pen.LAYERS.TIPS, 100 )/100
-        -- local correction = pen.new_slider( "test2", 50, 75, pen.LAYERS.TIPS, 100 )/100
-        -- pen.new_pixel( is_right and s_x or -5, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
-        -- pen.new_pixel( is_right and -5 or s_x, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
+        -- local color = 255*pen.new.slider( "test1", 50, 50, pen.LAYERS.TIPS, 100 )/100
+        -- local correction = pen.new.slider( "test2", 50, 75, pen.LAYERS.TIPS, 100 )/100
+        -- pen.new.pixel( is_right and s_x or -5, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
+        -- pen.new.pixel( is_right and -5 or s_x, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
         ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x - ( is_right and 500 or 0 ), c_y )
     end
 
