@@ -2,7 +2,6 @@ _MNEEDATA[ "vector_core" ] = {
 	order_id = 1.1,
 	name = "HermeS Vector",
 	desc = "An assortment of actions to control your character.",
-	is_folded = true,
 }
 
 _BINDINGS[ "vector_core" ] = {

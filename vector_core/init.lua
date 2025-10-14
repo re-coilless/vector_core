@@ -260,7 +260,7 @@ function OnWorldPreUpdate()
                 GlobalsSetValue( pen.GLOBAL_JPAD_MWD..jpad, pen.t.pack({ mw_x, mw_y, frame_num + 3 }))
 
                 local pic_x, pic_y = pen.world2gui( mw_x, mw_y )
-                pen.new.image( pic_x, pic_y, pen.LAYERS.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
+                pen.new.image( pic_x, pic_y, pen.Z.DEBUG - 11.11, "data/ui_gfx/mouse_cursor.png", { is_centered = true })
 
                 if( mnee.mnin( "bind", { mroot, "focus_aim" }, { mode = "guied" })) then
                     pic_x, pic_y = pen.world2gui( x + 250*math.cos( angle ), y + 250*math.sin( angle )) end
@@ -536,10 +536,10 @@ function OnWorldPostUpdate()
 
         --do straightforward split-screen system
         local is_right = false--GameGetFrameNum()%2 == 1
-        -- local color = 255*pen.new.slider( "test1", 50, 50, pen.LAYERS.TIPS, 100 )/100
-        -- local correction = pen.new.slider( "test2", 50, 75, pen.LAYERS.TIPS, 100 )/100
-        -- pen.new.pixel( is_right and s_x or -5, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
-        -- pen.new.pixel( is_right and -5 or s_x, -5, pen.LAYERS.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
+        -- local color = 255*pen.new.slider( "test1", 50, 50, pen.Z.TIPS, 100 )/100
+        -- local correction = pen.new.slider( "test2", 50, 75, pen.Z.TIPS, 100 )/100
+        -- pen.new.pixel( is_right and s_x or -5, -5, pen.Z.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
+        -- pen.new.pixel( is_right and -5 or s_x, -5, pen.Z.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
         ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x - ( is_right and 500 or 0 ), c_y )
     end
 
