@@ -157,12 +157,15 @@ function OnWorldPreUpdate()
         pen.c.estimator_memo[ eid_y ] = math.max( pen.c.estimator_memo[ eid_y ] - recoil, -7 )
         pen.c.estimator_memo[ eid_r ] = pen.c.estimator_memo[ eid_r ] + ( is_advanced and this_sign or 1 )*tilt
 
-        local push_force = 10*recoil/pen.get_full_mass( entity_id )
+        local full_mass = pen.get_full_mass( entity_id )
+        local push_force = 10*recoil/full_mass
+        local will_hurt = push_force > 200
+
         local no_support = not( ComponentGetValue2( char_comp, "is_on_ground" ))
-        if( push_force > 1.5 and no_support ) then push_force = 25*push_force end
+        if( push_force > 1.5 and no_support ) then push_force = 5*push_force*full_mass/4 end
         pen.c.vector_recoil[ entity_id ][1] = -push_force*math.cos( gun_r )
         pen.c.vector_recoil[ entity_id ][2] = -push_force*math.sin( gun_r )
-        if( push_force > 200 ) then
+        if( will_hurt ) then
             --apply stun effect
             EntityInflictDamage( entity_id, push_force/350, "DAMAGE_PHYSICS_HIT", "Could not handle the recoil.", "NORMAL", pen.c.vector_recoil[ entity_id ][1], pen.c.vector_recoil[ entity_id ][2], entity_id, x, y, push_force )
         end
