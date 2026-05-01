@@ -67,8 +67,8 @@ _BINDINGS[ "vector_core" ] = {
 	run = {
 		order_id = "ba",
 		allow_special = true,
-		name = "Toggle Run",
-		desc = "Makes the character move faster.",
+		name = "Run",
+		desc = "Makes the character move faster (Left Shift/Control are excluded from special keys in this context).",
 		keys = {[ "left_shift" ] = 1 },
 		keys_alt = {[ "1gpd_l1" ] = 1 },
 	},
@@ -86,7 +86,6 @@ _BINDINGS[ "vector_core" ] = {
 		keys = {[ "w" ] = 1 },
 		keys_alt = {[ "gpd_btn_lv_-" ] = 1 },
 	},
-
 	
 	interact = {
 		order_id = "ca",

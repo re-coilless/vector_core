@@ -14,6 +14,7 @@ function OnWorldPreUpdate()
     local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
     local global_friction = "VECTOR_BASELINE_FRICTION"
     local global_dash_delay = "VECTOR_DASH_DELAY_FRAMES"
+    local global_always_run = "VECTOR_ALWAYS_RUN"
     local global_coyote_time = "VECTOR_COYOTE_TIME"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
@@ -199,6 +200,7 @@ function OnWorldPreUpdate()
         mnee.SPECIAL_KEYS[ "2gpd_r1" ], mnee.SPECIAL_KEYS[ "2gpd_l1" ] = true, true
         mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = true, true
         mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = true, true
+        mnee.SPECIAL_KEYS[ "left_shift" ], mnee.SPECIAL_KEYS[ "left_ctrl" ] = nil, nil
 
         local movement = mnee.mnin( "stick", { mroot, "movement" }, { mode = "guied" })
         update_key( movement[1] < 0, "Left" ); update_key( movement[1] > 0, "Right" )
@@ -288,6 +290,7 @@ function OnWorldPreUpdate()
         mnee.SPECIAL_KEYS[ "2gpd_r1" ], mnee.SPECIAL_KEYS[ "2gpd_l1" ] = nil, nil
         mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = nil, nil
         mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = nil, nil
+        mnee.SPECIAL_KEYS[ "left_shift" ], mnee.SPECIAL_KEYS[ "left_ctrl" ] = true, true
 
         pen.c.vector_cntrls[ entity_id ] = true
     end
@@ -306,6 +309,7 @@ function OnWorldPreUpdate()
         local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
         local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
         local jump = ComponentGetValue2( ctrl_comp, "mButtonFrameJump" ) == frame_num
+        local run = ComponentGetValue2( ctrl_comp, "mButtonDownRun" )
         
         local x, y, _, s_x = EntityGetTransform( entity_id )
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
@@ -335,25 +339,24 @@ function OnWorldPreUpdate()
         --do swimming manually; jumping angle should be based on surface normal and fully procedural
         --reduce standstill friction if player holds down jump
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
-        --running (walking should be pretty relaxed)
 
-        local is_mounting = false
+        local is_mantling = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
             local check_x = x + 2*body_off
             local chest_off = ComponentGetValue2( char_comp, "buoyancy_check_offset_y" )
             local no_space = RaytracePlatforms( check_x, y + chest_off, check_x, y + head_off - 1 )
             no_space = no_space or RaytracePlatforms( check_x, y + head_off - 1, x, y + head_off - 1 )
-            is_mounting = not( no_space or RaytracePlatforms( x, y + chest_off, check_x, y + chest_off ))
-            if( is_mounting ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
+            is_mantling = not( no_space or RaytracePlatforms( x, y + chest_off, check_x, y + chest_off ))
+            if( is_mantling ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
         end
 
-        local x_decay = is_wall and not( did_mount )
+        local x_decay = is_wall and not( did_mantle )
         local y_transfer = is_wall and near_ground and jump
         v_x = x_decay and 0.9*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
         v_y = y_transfer and v_y - ( gravity/2 + math.max( 10*gravity, math.abs( v_x ))) or v_y
         v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
-        if( not( is_mounting ) and did_mount ) then v_x = v_x + 50*( flip and -1 or 1 ) end
-        pen.c.vector_mnt_mm[ entity_id ] = is_mounting
+        if( not( is_mantling ) and did_mantle ) then v_x = v_x + 50*( flip and -1 or 1 ) end
+        pen.c.vector_mnt_mm[ entity_id ] = is_mantling
 
         local strength = is_ground and pen.get_strength( entity_id ) or 0
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
@@ -370,6 +373,8 @@ function OnWorldPreUpdate()
         if( left or right ) then
             -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
             local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
+            local always_run = GlobalsGetValue( global_always_run, "1" ) == "1"
+            if( run == always_run ) then force = force/3 end
             -- if( will_dash ) then force = 5*force; pen.c.vector_prcisn[ entity_id ] = force end
 
             -- local prec = math.min( 1.25*( pen.c.vector_prcisn[ entity_id ] or init_speed ), 2*top_speed )
