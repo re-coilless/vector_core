@@ -16,6 +16,7 @@ function OnWorldPreUpdate()
     local global_dash_delay = "VECTOR_DASH_DELAY_FRAMES"
     local global_always_run = "VECTOR_ALWAYS_RUN"
     local global_coyote_time = "VECTOR_COYOTE_TIME"
+    local global_tutorial_list = "VECTOR_TUTORIAL_LIST"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
     if( HasFlagPersistent( "never_spawn_this_action" )) then RemoveFlagPersistent( "never_spawn_this_action" ) end
@@ -55,7 +56,7 @@ function OnWorldPreUpdate()
     end
 
     local function vector_effect( entity_id )
-        -- new status effect system (maybe it through HitEffectComp, thanks Extol)
+        -- new status effect system (maybe do it through HitEffectComp, thanks Extol)
     end
     
     local function vector_handling( entity_id )
@@ -396,12 +397,31 @@ function OnWorldPreUpdate()
     end
     
     local function vector_tutorial( entity_id )
-        --darkening of the screen with circular/rectangular cutouts/highlights and input blocking everywhere but there
+        if( pen.magic_storage( entity_id, "vector_no_tutorial", "value_bool" )) then return end
+        local queue = pen.t.pack( GlobalsGetValue( global_tutorial_list, "" ))
+        if( not( pen.vld( queue ))) then return end
+        
+        local guide = {}
+        pen.t.loop( queue, function( i, file )
+            guide = dofile_once( file )( guide )
+        end)
+        if( not( pen.vld( guide ))) then return end
+
         --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area)
-        --tips near the cutouts
-        --ability to skip steps
-        --ability to skip tutorial
-        --define tutorial structure through globals
+
+        pen.t.loop( pen.t.order( guide, function( a, b )
+            local v1 = guide[a].order_id or 100*string.byte( a )
+            local v2 = guide[b].order_id or 100*string.byte( b )
+            return v1 < v2
+        end), function( i, v )
+            --darkening of the screen with rectangular highlights and input blocking everywhere but there
+            --tips near the cutouts (automatically pick the best side for text, allow injecting custom styles)
+            --ability to skip steps, ability to skip tutorial (does not count as completion)
+
+            --use flags for making sure only one is active
+            --active tutorials must be dynamic (so if player exits the menu, it will disappear and reappear on reentry)
+            --save the tutorial state as stages (a table that stores the tutorial ids and the values for the steps reached), so quitting after completing one saves the progress (only save once tutorial step marked as checkpoint is reached)
+        end)
     end
 
     local function vector_ctrl( entity_id )
