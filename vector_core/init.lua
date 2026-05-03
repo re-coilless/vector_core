@@ -2,6 +2,7 @@ if( ModIsEnabled( "mnee" )) then
 	ModLuaFileAppend( "mods/mnee/bindings.lua", "mods/vector_core/mnee.lua" )
 else return end
 
+--documentation + examples
 --allow injecting/overriding functions
 --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
 --most vector modules should be disabled by default
@@ -17,6 +18,9 @@ function OnWorldPreUpdate()
     local global_always_run = "VECTOR_ALWAYS_RUN"
     local global_coyote_time = "VECTOR_COYOTE_TIME"
     local global_tutorial_list = "VECTOR_TUTORIAL_LIST"
+    local global_tutorial_safety = "VECTOR_TUTORIAL_SAFETY"
+    local global_tutorial_progress = "VECTOR_TUTORIAL_PROGRESS"
+    local setting_tutorial_progress = "VECTOR.TUTORIAL_PROGRESS"
     local flag_second_life = "VECTOR_DAMAGE_PREVENTION_SAFETY"
     if( GameHasFlagRun( flag_second_life )) then GameRemoveFlagRun( flag_second_life ) end
     if( HasFlagPersistent( "never_spawn_this_action" )) then RemoveFlagPersistent( "never_spawn_this_action" ) end
@@ -407,21 +411,100 @@ function OnWorldPreUpdate()
         end)
         if( not( pen.vld( guide ))) then return end
 
-        --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area)
+        --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area and a way to ignore this)
+        
+        local progress_global = pen.t.pack( pen.setting_get( setting_tutorial_progress ))
+        local progress_local = pen.t.pack( GlobalsGetValue( global_tutorial_progress, "" ))
+        if( not( pen.vld( progress_local ))) then
+            progress_local = pen.vld( progress_global ) and progress_global or {{ "_", 0 }}
+            GlobalsGetValue( global_tutorial_progress, pen.t.pack( progress_local ))
+        end
 
-        pen.t.loop( pen.t.order( guide, function( a, b )
-            local v1 = guide[a].order_id or 100*string.byte( a )
-            local v2 = guide[b].order_id or 100*string.byte( b )
-            return v1 < v2
-        end), function( i, v )
-            --darkening of the screen with rectangular highlights and input blocking everywhere but there
-            --tips near the cutouts (automatically pick the best side for text, allow injecting custom styles)
-            --ability to skip steps, ability to skip tutorial (does not count as completion)
+        local module_id = ""
+        local frame_num = GameGetFrameNum()
+        progress_local = pen.t.unarray( progress_local )
+        local step = pen.t.loop( pen.t.order( guide ), function( id, module )
+            if( not( pen.ghf( module.is_active ))) then return end
+            local safety = pen.t.pack( GlobalsGetValue( global_tutorial_safety, "|_|180|" ))
+            if( safety[1] ~= id and safety[2] > frame_num ) then return end
 
-            --use flags for making sure only one is active
-            --active tutorials must be dynamic (so if player exits the menu, it will disappear and reappear on reentry)
-            --save the tutorial state as stages (a table that stores the tutorial ids and the values for the steps reached), so quitting after completing one saves the progress (only save once tutorial step marked as checkpoint is reached)
+            module_id = id
+            local num = progress_local[ id ] or 1
+            local out = pen.t.loop( module.steps, function( i, v )
+                if( i ~= num ) then return end
+                return v
+            end)
+
+            if( pen.vld( out )) then
+                GlobalsSetValue( global_tutorial_safety, pen.t.pack({ id, frame_num + 60 }))
+            end
+
+            return out
         end)
+
+        if( not( pen.vld( step ))) then return end
+
+        local will_save = step.is_checkpoint
+        local is_done = pen.ghf( step.is_done )
+        if( not( step.is_pause )) then
+			pen.c.estimator_memo = pen.c.estimator_memo or {}
+            pen.c.vector_t_intr = pen.c.vector_t_intr or module_id
+            if( pen.c.vector_t_intr ~= module_id ) then
+                pen.c.vector_t_intr = module_id
+                pen.c.estimator_memo[ "vector_tutorial_x" ] = nil
+                pen.c.estimator_memo[ "vector_tutorial_y" ] = nil
+                pen.c.estimator_memo[ "vector_tutorial_w" ] = nil
+                pen.c.estimator_memo[ "vector_tutorial_h" ] = nil
+            end
+
+            local alpha = 0.5
+            local name = pen.magic_translate( step.name )
+            local desc = pen.magic_translate( step.desc )
+            local x, y = unpack( pen.ghf( step.zone_xy ))
+            local w, h = unpack( pen.ghf( step.zone_wh ))
+            local screen_x, screen_y = pen.get_screen_data()
+            pen.c.estimator_memo[ "vector_tutorial_x" ] = pen.c.estimator_memo[ "vector_tutorial_x" ] or -5
+            x = pen.estimate( "vector_tutorial_x", x, "wgt0.5" )
+            pen.c.estimator_memo[ "vector_tutorial_y" ] = pen.c.estimator_memo[ "vector_tutorial_y" ] or -5
+            y = pen.estimate( "vector_tutorial_y", y, "wgt0.5" )
+            pen.c.estimator_memo[ "vector_tutorial_w" ] = pen.c.estimator_memo[ "vector_tutorial_w" ] or screen_x
+            w = pen.estimate( "vector_tutorial_w", w, "wgt0.5" )
+            pen.c.estimator_memo[ "vector_tutorial_h" ] = pen.c.estimator_memo[ "vector_tutorial_h" ] or screen_y
+            h = pen.estimate( "vector_tutorial_h", h, "wgt0.5" )
+
+            pen.new.pixel( -5, -5,
+                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, x + 5, screen_y + 5, alpha )
+            pen.new.interface( -5, -5, x + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
+            pen.new.pixel( x, -5,
+                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, w, y + 5, alpha )
+            pen.new.interface( x, -5, w, y + 5, pen.Z.TUTORIAL_SHADOW )
+            pen.new.pixel( x + w, -5,
+                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, screen_x - ( x + w ) + 5, screen_y + 5, alpha )
+            pen.new.interface( x + w, -5, screen_x - ( x + w ) + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
+            pen.new.pixel( x, y + h,
+                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, w, screen_y - ( y + h ) + 5, alpha )
+            pen.new.interface( x, y + h, w, screen_y - ( y + h ) + 5, pen.Z.TUTORIAL_SHADOW )
+
+            --step.func should override the visuals
+            --tips near the cutouts (automatically pick the best side for text, allow injecting custom styles)
+            --disable checkpoint saves, through a flag, if [NEXT] or [EXIT] was pressed
+
+            is_done = mnee.new_button( x, y + h + 3, pen.Z.TUTORIAL_TIPS, --highlight this
+                "mods/mnee/files/pics/key_right.png", { auid = "vector_tutorial_next", jpad = true })
+            -- "mods/mnee/files/pics/key_left.png"
+            -- "mods/mnee/files/pics/key_unbind.png"
+        end
+        
+        if( not( is_done )) then return end
+        progress_local[ module_id ] = ( progress_local[ module_id ] or 1 ) + 1
+        GlobalsSetValue( global_tutorial_progress, pen.t.pack( pen.t.unarray( progress_local )))
+
+        if( will_save ) then
+            progress_global = pen.t.unarray( progress_global )
+            if( progress_local[ module_id ] <= ( progress_global[ module_id ] or 0 )) then return end
+            progress_global[ module_id ] = progress_local[ module_id ]
+            pen.setting_set( setting_tutorial_progress, pen.t.pack( pen.t.unarray( progress_global )))
+        end
     end
 
     local function vector_ctrl( entity_id )
