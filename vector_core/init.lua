@@ -6,6 +6,7 @@ else return end
 --allow injecting/overriding functions
 --add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
 --most vector modules should be disabled by default
+--example mod for tutorial module that teaches how to play the game
 
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
@@ -399,9 +400,17 @@ function OnWorldPreUpdate()
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
     end
-    
-    local function vector_tutorial( entity_id )
-        if( pen.magic_storage( entity_id, "vector_no_tutorial", "value_bool" )) then return end
+
+    local function vector_ctrl( entity_id )
+        pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
+            if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
+            local path = ComponentGetValue2( comp, "value_string" )
+            if( not( pen.vld( path ))) then return end
+            dofile( path )( entity_id )
+        end)
+    end
+
+    local function vector_tutorial()
         local queue = pen.t.pack( GlobalsGetValue( global_tutorial_list, "" ))
         if( not( pen.vld( queue ))) then return end
         
@@ -411,6 +420,7 @@ function OnWorldPreUpdate()
         end)
         if( not( pen.vld( guide ))) then return end
 
+        --buttons must be HermeS styled (steal from Marshall)
         --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area and a way to ignore this)
         
         local progress_global = pen.t.pack( pen.setting_get( setting_tutorial_progress ))
@@ -448,51 +458,84 @@ function OnWorldPreUpdate()
         local is_done = pen.ghf( step.is_done )
         if( not( step.is_pause )) then
 			pen.c.estimator_memo = pen.c.estimator_memo or {}
-            pen.c.vector_t_intr = pen.c.vector_t_intr or module_id
-            if( pen.c.vector_t_intr ~= module_id ) then
-                pen.c.vector_t_intr = module_id
+            pen.c.vector_t_intr = pen.c.vector_t_intr or { module_id, frame_num + 5 }
+            if( pen.c.vector_t_intr[1] ~= module_id or pen.c.vector_t_intr[2] < frame_num ) then
+                pen.c.vector_t_intr[1] = module_id
+                pen.c.estimator_memo[ "vector_tutorial_a" ] = nil
+                pen.c.estimator_memo[ "vector_tutorial_t" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_x" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_y" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_w" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_h" ] = nil
             end
-
-            local alpha = 0.5
-            local name = pen.magic_translate( step.name )
-            local desc = pen.magic_translate( step.desc )
-            local x, y = unpack( pen.ghf( step.zone_xy ))
-            local w, h = unpack( pen.ghf( step.zone_wh ))
+            
+            pen.c.vector_t_intr[2] = frame_num + 5
+            
             local screen_x, screen_y = pen.get_screen_data()
+            local pic_x, pic_y = unpack( pen.ghf( step.zone_xy, { screen_x, screen_y }))
+            local zone_w, zone_h = unpack( pen.ghf( step.zone_wh, { screen_x, screen_y }))
+            local alpha = pen.estimate( "vector_tutorial_a", 1, "wgt500" )
             pen.c.estimator_memo[ "vector_tutorial_x" ] = pen.c.estimator_memo[ "vector_tutorial_x" ] or -5
-            x = pen.estimate( "vector_tutorial_x", x, "wgt0.5" )
+            pic_x = pen.estimate( "vector_tutorial_x", pic_x, "wgt0.5" )
             pen.c.estimator_memo[ "vector_tutorial_y" ] = pen.c.estimator_memo[ "vector_tutorial_y" ] or -5
-            y = pen.estimate( "vector_tutorial_y", y, "wgt0.5" )
+            pic_y = pen.estimate( "vector_tutorial_y", pic_y, "wgt0.5" )
             pen.c.estimator_memo[ "vector_tutorial_w" ] = pen.c.estimator_memo[ "vector_tutorial_w" ] or screen_x
-            w = pen.estimate( "vector_tutorial_w", w, "wgt0.5" )
+            zone_w = pen.estimate( "vector_tutorial_w", zone_w, "wgt0.5" )
             pen.c.estimator_memo[ "vector_tutorial_h" ] = pen.c.estimator_memo[ "vector_tutorial_h" ] or screen_y
-            h = pen.estimate( "vector_tutorial_h", h, "wgt0.5" )
+            zone_h = pen.estimate( "vector_tutorial_h", zone_h, "wgt0.5" )
 
-            pen.new.pixel( -5, -5,
-                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, x + 5, screen_y + 5, alpha )
-            pen.new.interface( -5, -5, x + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
-            pen.new.pixel( x, -5,
-                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, w, y + 5, alpha )
-            pen.new.interface( x, -5, w, y + 5, pen.Z.TUTORIAL_SHADOW )
-            pen.new.pixel( x + w, -5,
-                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, screen_x - ( x + w ) + 5, screen_y + 5, alpha )
-            pen.new.interface( x + w, -5, screen_x - ( x + w ) + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
-            pen.new.pixel( x, y + h,
-                pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, w, screen_y - ( y + h ) + 5, alpha )
-            pen.new.interface( x, y + h, w, screen_y - ( y + h ) + 5, pen.Z.TUTORIAL_SHADOW )
+            local function fog( pic_x, pic_y, zone_w, zone_h, screen_x, screen_y, alpha, density, can_click )
+                density = density or 0.5
 
-            --step.func should override the visuals
-            --tips near the cutouts (automatically pick the best side for text, allow injecting custom styles)
-            --disable checkpoint saves, through a flag, if [NEXT] or [EXIT] was pressed
+                pen.new.pixel( -5, -5,
+                    pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, pic_x + 5, screen_y + 5, alpha*density )
+                pen.new.pixel( pic_x, -5,
+                    pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, zone_w, pic_y + 5, alpha*density )
+                pen.new.pixel( pic_x + zone_w, -5,
+                    pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, screen_x - ( pic_x + zone_w ) + 5, screen_y + 5, alpha*density )
+                pen.new.pixel( pic_x, pic_y + zone_h,
+                    pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, zone_w, screen_y - ( pic_y + zone_h ) + 5, alpha*density )
 
-            is_done = mnee.new_button( x, y + h + 3, pen.Z.TUTORIAL_TIPS, --highlight this
-                "mods/mnee/files/pics/key_right.png", { auid = "vector_tutorial_next", jpad = true })
-            -- "mods/mnee/files/pics/key_left.png"
-            -- "mods/mnee/files/pics/key_unbind.png"
+                if( can_click ) then return end
+
+                pen.new.interface( -5, -5, pic_x + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
+                pen.new.interface( pic_x, -5, zone_w, pic_y + 5, pen.Z.TUTORIAL_SHADOW )
+                pen.new.interface( pic_x + zone_w, -5, screen_x - ( pic_x + zone_w ) + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
+                pen.new.interface( pic_x, pic_y + zone_h, zone_w, screen_y - ( pic_y + zone_h ) + 5, pen.Z.TUTORIAL_SHADOW )
+            end
+
+            local func = step.func or guide[ module_id ].func
+            if( func ~= nil ) then
+                is_done = func( pic_x, pic_y, zone_w, zone_h,
+                    screen_x, screen_y, alpha, fog, is_done, guide[ module_id ], step )
+            else
+                fog( pic_x, pic_y, zone_w, zone_h, screen_x, screen_y, alpha, step.fog or guide[ module_id ].fog )
+
+                local title_x = screen_x/2
+                local title = "TUTORIAL - "..pen.magic_translate( guide[ module_id ].name )
+                pen.c.estimator_memo[ "vector_tutorial_t" ] = pen.c.estimator_memo[ "vector_tutorial_t" ] or -100
+                if( pic_x + zone_w < screen_x*0.66 and pic_x + zone_w > screen_x*0.33 and pic_y < 15 ) then
+                    title_x = pen.get_text_dims( title, true )/2 + 5
+                end
+
+                pen.new.text_shad( pen.estimate( "vector_tutorial_t", title_x, "wgt0.5" ), 5,
+                    pen.Z.TUTORIAL_TIPS, title, { color = pen.P.VNL.RUNIC, is_centered_x = true, alpha = alpha })
+                
+                local name = "{>color>{{-}|VNL|YELLOW|{-}"..pen.magic_translate( step.name ).."}<color<}"
+                local desc = name.."\n"..pen.magic_translate( step.desc )
+                local desc_w, desc_h = unpack( pen.get_tip_dims( desc, math.max( zone_w, 150 ), -1, -2 ))
+                pen.new.text_shad( pic_x, pic_y + zone_h + 2, pen.Z.TUTORIAL_TIPS, desc, {
+                    dims = { desc_w + 2, -1 }, fully_featured = true, line_offset = -2, alpha = alpha })
+                --buttons are aligned to the text (make sure zones that are close to edges are usable)
+                
+                --disable checkpoint saves for a spesific module through a global if [NEXT] was force pressed
+                
+                --highlight next if is_done
+                mnee.new_button( pic_x + zone_w + 2, pic_y + 1, pen.Z.TUTORIAL_TIPS,
+                    "mods/mnee/files/pics/key_left.png", { auid = "vector_tutorial_back", jpad = true })
+                is_done = mnee.new_button( pic_x + zone_w + 14, pic_y + 1, pen.Z.TUTORIAL_TIPS,
+                    "mods/mnee/files/pics/key_right.png", { auid = "vector_tutorial_next", jpad = true })
+            end
         end
         
         if( not( is_done )) then return end
@@ -507,15 +550,6 @@ function OnWorldPreUpdate()
         end
     end
 
-    local function vector_ctrl( entity_id )
-        pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
-            if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
-            local path = ComponentGetValue2( comp, "value_string" )
-            if( not( pen.vld( path ))) then return end
-            dofile( path )( entity_id )
-        end)
-    end
-
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         vector_stress( entity_id ) -- adrenaline system
         vector_effect( entity_id ) -- custom status effects
@@ -523,9 +557,12 @@ function OnWorldPreUpdate()
         pen.c.vector_cntrls[ entity_id ] = false
         vector_controls( entity_id ) -- M-Nee based controls
         vector_momentum( entity_id ) -- momentum-based speed controller
-        vector_tutorial( entity_id ) -- centralized modular tutorial framework
         vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
+
+    vector_tutorial() -- centralized tutorial framework
+
+	pen.new.builder( true )
 end
 
 function OnWorldPostUpdate()
