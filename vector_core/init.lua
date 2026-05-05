@@ -421,8 +421,6 @@ function OnWorldPreUpdate()
         end)
         if( not( pen.vld( guide ))) then return end
         
-        --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area and a way to ignore this)
-        
         local progress_global = pen.t.pack( pen.setting_get( setting_tutorial_progress ))
         local progress_local = pen.t.pack( GlobalsGetValue( global_tutorial_progress, "" ))
         if( not( pen.vld( progress_local ))) then
@@ -500,6 +498,10 @@ function OnWorldPreUpdate()
                 pen.new.interface( pic_x + zone_w, -5, screen_x - ( pic_x + zone_w ) + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
                 pen.new.interface( pic_x, pic_y + zone_h, zone_w, screen_y - ( pic_y + zone_h ) + 5, pen.Z.TUTORIAL_SHADOW )
             end
+            
+            for i = 1,4 do
+                GlobalsSetValue( pen.GLOBAL_JPAD_ZONE..i, pen.t.pack({ frame_num + 3, pic_x, pic_y, zone_w, zone_h }))
+            end
 
             local func = step.func or guide[ module_id ].func
             if( func ~= nil ) then
@@ -552,11 +554,13 @@ function OnWorldPreUpdate()
                     return pen.new.button( pic_x, pic_y, pic_z, pic, data )
                 end
 
+                mnee.ignore_zone_mode = true
+
                 local is_first = ( progress_local[ module_id ] or 1 ) == 1
                 local btn_x, btn_y = pic_x + zone_w + 2, pic_y + zone_h - 12
                 if( btn_x + 25 > screen_x ) then btn_x = pic_x - 24 end
                 if( is_top ) then btn_y = pic_y + 2 end
-
+                
                 local go_back = new_button( btn_x, btn_y, pen.Z.TUTORIAL_TIPS,
                     "mods/vector_core/back"..( is_first and "_" or "" )..".png", { auid = "vector_tutorial_back", jpad = true })
                 if( go_back and not( is_first )) then
@@ -576,6 +580,8 @@ function OnWorldPreUpdate()
                     pen.play_sound( pen.S.VNL.CLICK )
                     pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
                 end
+
+                mnee.ignore_zone_mode = nil
             end
         end
         
