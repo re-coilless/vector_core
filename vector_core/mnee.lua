@@ -53,7 +53,7 @@ _BINDINGS[ "vector_core" ] = {
 		order_id = "ac",
 		is_weak = true,
 		name = "Focus Aim",
-		desc = "Shift the camera towards the aiming direction.",
+		desc = "Shifts the camera towards the aiming direction.",
 		keys = {[ "1gpd_down" ] = 1, },
 	},
 	halt_autoaim = {

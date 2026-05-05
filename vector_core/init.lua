@@ -416,11 +416,11 @@ function OnWorldPreUpdate()
         
         local guide = {}
         pen.t.loop( queue, function( i, file )
+            if( not( ModDoesFileExist( file ))) then return end
             guide = dofile_once( file )( guide )
         end)
         if( not( pen.vld( guide ))) then return end
-
-        --buttons must be HermeS styled (steal from Marshall)
+        
         --make sure jpad input is working properly (add a way to limit jpad focusing except for certain area and a way to ignore this)
         
         local progress_global = pen.t.pack( pen.setting_get( setting_tutorial_progress ))
@@ -462,6 +462,7 @@ function OnWorldPreUpdate()
             if( pen.c.vector_t_intr[1] ~= module_id or pen.c.vector_t_intr[2] < frame_num ) then
                 pen.c.vector_t_intr[1] = module_id
                 pen.c.estimator_memo[ "vector_tutorial_a" ] = nil
+                pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_t" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_x" ] = nil
                 pen.c.estimator_memo[ "vector_tutorial_y" ] = nil
@@ -474,18 +475,14 @@ function OnWorldPreUpdate()
             local screen_x, screen_y = pen.get_screen_data()
             local pic_x, pic_y = unpack( pen.ghf( step.zone_xy, { screen_x, screen_y }))
             local zone_w, zone_h = unpack( pen.ghf( step.zone_wh, { screen_x, screen_y }))
-            local alpha = pen.estimate( "vector_tutorial_a", 1, "wgt500" )
-            pen.c.estimator_memo[ "vector_tutorial_x" ] = pen.c.estimator_memo[ "vector_tutorial_x" ] or -5
-            pic_x = pen.estimate( "vector_tutorial_x", pic_x, "wgt0.5" )
-            pen.c.estimator_memo[ "vector_tutorial_y" ] = pen.c.estimator_memo[ "vector_tutorial_y" ] or -5
-            pic_y = pen.estimate( "vector_tutorial_y", pic_y, "wgt0.5" )
-            pen.c.estimator_memo[ "vector_tutorial_w" ] = pen.c.estimator_memo[ "vector_tutorial_w" ] or screen_x
-            zone_w = pen.estimate( "vector_tutorial_w", zone_w, "wgt0.5" )
-            pen.c.estimator_memo[ "vector_tutorial_h" ] = pen.c.estimator_memo[ "vector_tutorial_h" ] or screen_y
-            zone_h = pen.estimate( "vector_tutorial_h", zone_h, "wgt0.5" )
+            local alpha = pen.estimate( "vector_tutorial_a", { 100, 0 }, "exp5" )/100
+            pic_x = pen.estimate( "vector_tutorial_x", { pic_x, -5 }, "wgt0.5" )
+            pic_y = pen.estimate( "vector_tutorial_y", { pic_y, -5 }, "wgt0.5" )
+            zone_w = pen.estimate( "vector_tutorial_w", { zone_w, screen_x }, "wgt0.5" )
+            zone_h = pen.estimate( "vector_tutorial_h", { zone_h, screen_y }, "wgt0.5" )
 
             local function fog( pic_x, pic_y, zone_w, zone_h, screen_x, screen_y, alpha, density, can_click )
-                density = density or 0.5
+                density = density or 0.75
 
                 pen.new.pixel( -5, -5,
                     pen.Z.TUTORIAL_SHADOW, pen.P.SHADOW, pic_x + 5, screen_y + 5, alpha*density )
@@ -513,28 +510,72 @@ function OnWorldPreUpdate()
 
                 local title_x = screen_x/2
                 local title = "TUTORIAL - "..pen.magic_translate( guide[ module_id ].name )
-                pen.c.estimator_memo[ "vector_tutorial_t" ] = pen.c.estimator_memo[ "vector_tutorial_t" ] or -100
                 if( pic_x + zone_w < screen_x*0.66 and pic_x + zone_w > screen_x*0.33 and pic_y < 15 ) then
                     title_x = pen.get_text_dims( title, true )/2 + 5
                 end
 
-                pen.new.text_shad( pen.estimate( "vector_tutorial_t", title_x, "wgt0.5" ), 5,
-                    pen.Z.TUTORIAL_TIPS, title, { color = pen.P.VNL.RUNIC, is_centered_x = true, alpha = alpha })
+                pen.new.text_shad( pen.estimate( "vector_tutorial_t", { title_x, -100 }, "wgt0.5" ), 5,
+                    pen.Z.TUTORIAL_TIPS, title, { color = pen.P.HRMS.BLUE_3, is_centered_x = true, alpha = alpha })
                 
-                local name = "{>color>{{-}|VNL|YELLOW|{-}"..pen.magic_translate( step.name ).."}<color<}"
+                local is_top = false
+                local name = "{>color>{{-}|HRMS|GREY_5|{-}"..pen.magic_translate( step.name ).."}<color<}"
                 local desc = name.."\n"..pen.magic_translate( step.desc )
                 local desc_w, desc_h = unpack( pen.get_tip_dims( desc, math.max( zone_w, 150 ), -1, -2 ))
-                pen.new.text_shad( pic_x, pic_y + zone_h + 2, pen.Z.TUTORIAL_TIPS, desc, {
+                local text_anim = pen.estimate( "vector_tutorial_o", { 0, 2*screen_x }, "wgt0.4" )
+                local t_x, t_y = pic_x + ( pic_x < screen_x/2 and -1 or 1 )*text_anim + 2, pic_y + zone_h + 2
+                if( pic_x + desc_w + 4 > screen_x ) then t_x = t_x - ( pic_x + desc_w + 4 - screen_x ) end
+                if( t_y + desc_h + 9 > screen_y ) then is_top, t_y = true, pic_y - desc_h - 4 end
+                pen.new.text_shad( t_x, t_y, pen.Z.TUTORIAL_TIPS, desc, {
                     dims = { desc_w + 2, -1 }, fully_featured = true, line_offset = -2, alpha = alpha })
-                --buttons are aligned to the text (make sure zones that are close to edges are usable)
                 
-                --disable checkpoint saves for a spesific module through a global if [NEXT] was force pressed
+                local function new_button( pic_x, pic_y, pic_z, pic, data )
+                    data = data or {}
+                    data.ignore_multihover = false
+                    data.frames = data.frames or 20
+                    data.highlight = data.highlight or pen.P.HRMS.RED_2
                 
-                --highlight next if is_done
-                mnee.new_button( pic_x + zone_w + 2, pic_y + 1, pen.Z.TUTORIAL_TIPS,
-                    "mods/mnee/files/pics/key_left.png", { auid = "vector_tutorial_back", jpad = true })
-                is_done = mnee.new_button( pic_x + zone_w + 14, pic_y + 1, pen.Z.TUTORIAL_TIPS,
-                    "mods/mnee/files/pics/key_right.png", { auid = "vector_tutorial_next", jpad = true })
+                    data.lmb_event = data.lmb_event or function( pic_x, pic_y, pic_z, pic, d )
+                        if( not( d.no_anim )) then pen.atm( d.auid.."l", nil, true ) end
+                        return pic_x, pic_y, pic_z, pic, d
+                    end
+                    data.rmb_event = data.rmb_event or function( pic_x, pic_y, pic_z, pic, d )
+                        if( not( d.no_anim )) then pen.atm( d.auid.."r", nil, true ) end
+                        return pic_x, pic_y, pic_z, pic, d
+                    end
+                    data.hov_event = data.hov_event or function( pic_x, pic_y, pic_z, pic, d )
+                        if( pen.vld( d.highlight )) then pen.new.pixel(
+                            pic_x - 1, pic_y - 1, pic_z + 0.01, d.highlight,
+                            ( d.s_x or 1 )*d.dims[1] + 2, ( d.s_y or 1 )*d.dims[2] + 2 ) end
+                        return pic_x, pic_y, pic_z, pic, d
+                    end
+                
+                    return pen.new.button( pic_x, pic_y, pic_z, pic, data )
+                end
+
+                local is_first = ( progress_local[ module_id ] or 1 ) == 1
+                local btn_x, btn_y = pic_x + zone_w + 2, pic_y + zone_h - 12
+                if( btn_x + 25 > screen_x ) then btn_x = pic_x - 24 end
+                if( is_top ) then btn_y = pic_y + 2 end
+
+                local go_back = new_button( btn_x, btn_y, pen.Z.TUTORIAL_TIPS,
+                    "mods/vector_core/back"..( is_first and "_" or "" )..".png", { auid = "vector_tutorial_back", jpad = true })
+                if( go_back and not( is_first )) then
+                    pen.play_sound( pen.S.VNL.SELECT )
+                    pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
+                    progress_local[ module_id ] = math.max(( progress_local[ module_id ] or 1 ) - 1, 1 )
+                    GlobalsSetValue( global_tutorial_progress, pen.t.pack( pen.t.unarray( progress_local )))
+                end
+
+                if( is_done ) then
+                    local frame_sin = 100*( math.sin( frame_num/10 ) + 1 )
+                    pen.colourer( pen.new.builder(), { 255, 255 - frame_sin/4, 255 - frame_sin }) 
+                end
+                is_done = new_button( btn_x + 12, btn_y, pen.Z.TUTORIAL_TIPS,
+                    "mods/vector_core/next.png", { auid = "vector_tutorial_next", jpad = true })
+                if( is_done ) then
+                    pen.play_sound( pen.S.VNL.CLICK )
+                    pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
+                end
             end
         end
         
