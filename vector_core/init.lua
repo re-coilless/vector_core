@@ -40,6 +40,28 @@ function OnWorldPreUpdate()
     pen.c.vector_aaagun = pen.c.vector_aaagun or {}
     pen.c.vector_aimrrr = pen.c.vector_aimrrr or {}
 
+    local function vector_effect()
+        local frame_num = GameGetFrameNum()
+        pen.t.loop( EntityGetWithTag( "vector_effect" ), function( i,effect_id )
+            local timer = pen.magic_storage( effect_id, "vector_timer", "value_bool", nil, false )
+
+            local is_removed = false
+            local is_added = not( ComponentGetValue2( timer, "value_bool" ))
+            if( is_added ) then ComponentSetValue2( timer, "value_bool", true ) end
+            local death_frame = ComponentGetValue2( timer, "value_int" )
+            if( death_frame > 0 ) then is_removed = death_frame < frame_num end
+
+            pen.t.loop( EntityGetComponent( effect_id, "VariableStorageComponent" ), function( e,comp )
+                if( ComponentGetValue2( comp, "name" ) ~= "vector_effect" ) then return end
+                local path = ComponentGetValue2( comp, "value_string" )
+                if( not( ModDoesFileExist( path ))) then return end
+                dofile( path )( EntityGetParent( effect_id ), effect_id, is_added, is_removed )
+            end)
+            
+            if( is_removed ) then EntityKill( effect_id ) end
+        end)
+    end
+
     local function vector_stress( entity_id )
         if( pen.magic_storage( entity_id, "vector_no_stress", "value_bool" )) then return end
         local stress = pen.magic_storage( entity_id, "stress", "value_float", nil, 0 )
@@ -58,10 +80,6 @@ function OnWorldPreUpdate()
         --total incoming adrenaline value must always increase else the benefits of it will decay
 
         --apply shader effects (extreme stress increases contrast and applies red hue shift)
-    end
-
-    local function vector_effect( entity_id )
-        -- new status effect system (maybe do it through HitEffectComp, thanks Extol)
     end
     
     local function vector_handling( entity_id )
@@ -405,7 +423,7 @@ function OnWorldPreUpdate()
         pen.t.loop( EntityGetComponent( entity_id, "VariableStorageComponent" ), function( i,comp )
             if( ComponentGetValue2( comp, "name" ) ~= "vector_ctrl" ) then return end
             local path = ComponentGetValue2( comp, "value_string" )
-            if( not( pen.vld( path ))) then return end
+            if( not( ModDoesFileExist( path ))) then return end
             dofile( path )( entity_id )
         end)
     end
@@ -498,7 +516,7 @@ function OnWorldPreUpdate()
                 pen.new.interface( pic_x + zone_w, -5, screen_x - ( pic_x + zone_w ) + 5, screen_y + 5, pen.Z.TUTORIAL_SHADOW )
                 pen.new.interface( pic_x, pic_y + zone_h, zone_w, screen_y - ( pic_y + zone_h ) + 5, pen.Z.TUTORIAL_SHADOW )
             end
-            
+
             for i = 1,4 do
                 GlobalsSetValue( pen.GLOBAL_JPAD_ZONE..i, pen.t.pack({ frame_num + 3, pic_x, pic_y, zone_w, zone_h }))
             end
@@ -597,9 +615,10 @@ function OnWorldPreUpdate()
         end
     end
 
+    vector_effect() -- timed effects within unified context
+
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         vector_stress( entity_id ) -- adrenaline system
-        vector_effect( entity_id ) -- custom status effects
         vector_handling( entity_id ) -- advanced wand handling
         pen.c.vector_cntrls[ entity_id ] = false
         vector_controls( entity_id ) -- M-Nee based controls
