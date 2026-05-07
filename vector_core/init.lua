@@ -3,9 +3,6 @@ if( ModIsEnabled( "mnee" )) then
 else return end
 
 --documentation + examples
---allow injecting/overriding functions
---add vector_ctrl tagged lua script that will restore entity to original state if entity-altering modification are disabled or the main tag is gone
---most vector modules should be disabled by default
 --example mod for tutorial module that teaches how to play the game
 
 function OnWorldPreUpdate()
@@ -55,16 +52,21 @@ function OnWorldPreUpdate()
                 if( ComponentGetValue2( comp, "name" ) ~= "vector_effect" ) then return end
                 local path = ComponentGetValue2( comp, "value_string" )
                 if( not( ModDoesFileExist( path ))) then return end
-                dofile( path )( EntityGetParent( effect_id ), effect_id, is_added, is_removed )
+                dofile( path )( EntityGetRootEntity( effect_id ), effect_id, is_added, is_removed )
             end)
-            
+
             if( is_removed ) then EntityKill( effect_id ) end
         end)
     end
 
-    local function vector_stress( entity_id )
-        if( pen.magic_storage( entity_id, "vector_no_stress", "value_bool" )) then return end
+    local function vector_stress( entity_id, injections_pre, injections_post )
+        if( not( pen.magic_storage( entity_id, "vector_do_stress", "value_bool" ))) then return end
         local stress = pen.magic_storage( entity_id, "stress", "value_float", nil, 0 )
+
+        pen.t.loop( injections_pre, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            stress = dofile( injection )( entity_id, stress )
+        end)
 
         --apply strength boost
         --get max_force
@@ -80,12 +82,17 @@ function OnWorldPreUpdate()
         --total incoming adrenaline value must always increase else the benefits of it will decay
 
         --apply shader effects (extreme stress increases contrast and applies red hue shift)
+
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            stress = dofile( injection )( entity_id, stress )
+        end)
     end
     
-    local function vector_handling( entity_id )
+    local function vector_handling( entity_id, injections_pre, injections_post )
         pen.c.vector_aimrrr[ entity_id ] = nil
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
-        if( pen.magic_storage( entity_id, "vector_no_handling", "value_bool" )) then return end
+        if( not( pen.magic_storage( entity_id, "vector_do_handling", "value_bool" ))) then return end
 
         local gun_id = pen.get_active_item( entity_id )
         local is_new = gun_id ~= pen.c.vector_aaagun[ entity_id ]
@@ -160,6 +167,11 @@ function OnWorldPreUpdate()
         local trans_comp = EntityGetFirstComponentIncludingDisabled( arm_id, "InheritTransformComponent" )
         local _, _, isx, isy, ir = ComponentGetValue2( trans_comp, "Transform" )
 
+        pen.t.loop( injections_pre, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            ix, iy, isx, isy, ir, r = dofile( injection )( entity_id, ix, iy, isx, isy, ir, r )
+        end)
+
         ComponentSetValue2( trans_comp, "only_position", false )
         ComponentSetValue2( trans_comp, "Transform", ix, iy, isx, isy, ir )
         if( not( is_advanced )) then
@@ -195,11 +207,16 @@ function OnWorldPreUpdate()
             EntityInflictDamage( entity_id, push_force/350, "DAMAGE_PHYSICS_HIT", "Could not handle the recoil.", "NORMAL", pen.c.vector_recoil[ entity_id ][1], pen.c.vector_recoil[ entity_id ][2], entity_id, x, y, push_force )
         end
 
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            dofile( injection )( entity_id, full_mass, push_force )
+        end)
+
         ComponentSetValue2( recoil_storage, "value_float", 0 )
     end
     
     --check for game effects
-    local function vector_controls( entity_id ) --partially stolen from IotaMP
+    local function vector_controls( entity_id, injections_pre, injections_post ) --partially stolen from IotaMP
         if( pen.magic_storage( entity_id, "vector_no_controls", "value_bool" )) then return end
         local ctrl_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "ControlsComponent" )
         if( not( pen.vld( ctrl_comp, true ))) then return end
@@ -225,6 +242,11 @@ function OnWorldPreUpdate()
         mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = true, true
         mnee.SPECIAL_KEYS[ "4gpd_r1" ], mnee.SPECIAL_KEYS[ "4gpd_l1" ] = true, true
         mnee.SPECIAL_KEYS[ "left_shift" ], mnee.SPECIAL_KEYS[ "left_ctrl" ] = nil, nil
+
+        pen.t.loop( injections_pre, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            dofile( injection )( entity_id )
+        end)
 
         local movement = mnee.mnin( "stick", { mroot, "movement" }, { mode = "guied" })
         update_key( movement[1] < 0, "Left" ); update_key( movement[1] > 0, "Right" )
@@ -310,6 +332,11 @@ function OnWorldPreUpdate()
             ComponentSetValue2( ctrl_comp, "mAimingVector", aim_l*math.cos( aim_r ), aim_l*math.sin( aim_r ))
         end
 
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            dofile( injection )( entity_id )
+        end)
+
         mnee.SPECIAL_KEYS[ "1gpd_r1" ], mnee.SPECIAL_KEYS[ "1gpd_l1" ] = nil, nil
         mnee.SPECIAL_KEYS[ "2gpd_r1" ], mnee.SPECIAL_KEYS[ "2gpd_l1" ] = nil, nil
         mnee.SPECIAL_KEYS[ "3gpd_r1" ], mnee.SPECIAL_KEYS[ "3gpd_l1" ] = nil, nil
@@ -319,9 +346,9 @@ function OnWorldPreUpdate()
         pen.c.vector_cntrls[ entity_id ] = true
     end
 
-    local function vector_momentum( entity_id )
+    local function vector_momentum( entity_id, injections_pre, injections_post )
         pen.c.vector_recoil[ entity_id ] = pen.c.vector_recoil[ entity_id ] or { 0, 0 }
-        if( pen.magic_storage( entity_id, "vector_no_momentum", "value_bool" )) then return end
+        if( not( pen.magic_storage( entity_id, "vector_do_momentum", "value_bool" ))) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
         if( not( pen.vld( char_comp, true ))) then return end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterPlatformingComponent" )
@@ -338,6 +365,12 @@ function OnWorldPreUpdate()
         local x, y, _, s_x = EntityGetTransform( entity_id )
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
+
+        pen.t.loop( injections_pre, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            left, right, jump, run, v_x, v_y, gravity =
+                dofile( injection )( entity_id, { left, right, jump, run }, v_x, v_y, gravity )
+        end)
 
         local did_mount = pen.c.vector_mnt_mm[ entity_id ] or false
         local flip = s_x < 0; if( left or right ) then flip = left end
@@ -360,6 +393,7 @@ function OnWorldPreUpdate()
         local is_wall = RaytracePlatforms( x + body_off, y + head_off + 1, x + body_off, y + feet_off )
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         
+        --coytte should apply a strength decay curve rather than completely cut off any air control
         --do swimming manually; jumping angle should be based on surface normal and fully procedural
         --reduce standstill friction if player holds down jump
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
@@ -413,6 +447,12 @@ function OnWorldPreUpdate()
             v_x = v_x - k*pen.sgn( v_x )*math.abs( decay )*pen.rat( mass, strength )
             if( old_sign ~= pen.sgn( v_x )) then v_x = 0 end
         else v_x = decay*v_x end
+
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            v_x, v_y = dofile( injection )( entity_id, strength, mass,
+                { left, right, jump, run }, { is_ground, is_wall, is_mantling }, v_x, v_y, gravity )
+        end)
 
         ComponentSetValue2( char_comp, "mVelocity", v_x, v_y )
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
@@ -618,11 +658,26 @@ function OnWorldPreUpdate()
     vector_effect() -- timed effects within unified context
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
-        vector_stress( entity_id ) -- adrenaline system
-        vector_handling( entity_id ) -- advanced wand handling
-        pen.c.vector_cntrls[ entity_id ] = false
-        vector_controls( entity_id ) -- M-Nee based controls
-        vector_momentum( entity_id ) -- momentum-based speed controller
+        pen.t.loop({
+            { "vector_stress", vector_stress }, -- adrenaline system
+            { "vector_handling", vector_handling }, -- advanced wand handling
+            { "vector_controls", vector_controls }, -- M-Nee based controls
+            { "vector_momentum", vector_momentum }, -- momentum-based speed controller
+        }, function( i, module )
+            local name = module[1]
+            if( name == "vector_controls" ) then pen.c.vector_cntrls[ entity_id ] = false end
+            
+            local func, funcs_pre, funcs_post = module[2], nil, nil
+            local path_total = pen.magic_storage( entity_id, name.."_total", "value_string" )
+            if( pen.vld( path_total )) then func = dofile( path_total ) end
+            local path_pre = pen.magic_storage( entity_id, name.."_pre", "value_string" )
+            if( pen.vld( path_pre )) then funcs_pre = pen.t.pack( path_pre ) end
+            local path_post = pen.magic_storage( entity_id, name.."_post", "value_string" )
+            if( pen.vld( path_post )) then funcs_post = pen.t.pack( path_post ) end
+            
+            func( entity_id, funcs_pre, funcs_post )
+        end)
+
         vector_ctrl( entity_id ) -- entity scripts within unified context
     end)
 
@@ -702,7 +757,7 @@ function OnWorldPostUpdate()
     end
 
     --try moving it to preupdate if force overriding the cam pos is impossible with this system
-    local function vector_camera( entity_id )
+    local function vector_camera( entity_id, injections_pre, injections_post )
         if( pen.magic_storage( entity_id, "vector_no_camera", "value_bool" )) then return end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "PlatformShooterPlayerComponent" )
         if( not( pen.vld( plat_comp, true ))) then return end
@@ -730,6 +785,11 @@ function OnWorldPostUpdate()
         if( not( is_out )) then pen.c.vector_aimzom[ entity_id ] = false end
         is_in = is_in or ( GameGetFrameNum() - tonumber( GlobalsGetValue( pen.GLOBAL_INPUT_FRAME, "0" )) < 2 )
 
+        pen.t.loop( injections_pre, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            d_r, d_l = dofile( injection )( entity_id, d_r, d_l )
+        end)
+        
         if( not( is_in ) and is_out and not( is_looking )) then
             local md_x, md_y = ComponentGetValue2( ctrl_comp, "mMouseDelta" )
             local is_holding = math.sqrt( md_x^2 + md_y^2 ) < 10
@@ -754,13 +814,34 @@ function OnWorldPostUpdate()
         -- local correction = pen.new.slider( "test2", 50, 75, pen.Z.TIPS, 100 )/100
         -- pen.new.pixel( is_right and s_x or -5, -5, pen.Z.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10 )
         -- pen.new.pixel( is_right and -5 or s_x, -5, pen.Z.WORLD_UI - 100, color, s_x + 5, 2*s_y + 10, correction )
-        ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x - ( is_right and 500 or 0 ), c_y )
+        local c_x = c_x - ( is_right and 500 or 0 )
+
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            c_x, c_y = dofile( injection )( entity_id, c_x, c_y )
+        end)
+
+        ComponentSetValueVector2( plat_comp, "mDesiredCameraPos", c_x, c_y )
     end
 
     pen.t.loop( EntityGetWithTag( "vector_ctrl" ), function( i, entity_id )
         vector_anim( entity_id ) -- layered animation controller
         vector_anim_events( entity_id ) -- animation-based events
-        vector_camera( entity_id ) -- responsive camera controller
+
+        pen.t.loop({
+            { "vector_camera", vector_camera }, -- responsive camera controller
+        }, function( i, module )
+            local name = module[1]
+            local func, funcs_pre, funcs_post = module[2], nil, nil
+            local path_total = pen.magic_storage( entity_id, name.."_total", "value_string" )
+            if( pen.vld( path_total )) then func = dofile( path_total ) end
+            local path_pre = pen.magic_storage( entity_id, name.."_pre", "value_string" )
+            if( pen.vld( path_pre )) then funcs_pre = pen.t.pack( path_pre ) end
+            local path_post = pen.magic_storage( entity_id, name.."_post", "value_string" )
+            if( pen.vld( path_post )) then funcs_post = pen.t.pack( path_post ) end
+            
+            func( entity_id, funcs_pre, funcs_post )
+        end)
     end)
 end
 
