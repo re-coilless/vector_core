@@ -14,6 +14,7 @@ function OnWorldPreUpdate()
     local global_friction = "VECTOR_BASELINE_FRICTION"
     local global_dash_delay = "VECTOR_DASH_DELAY_FRAMES"
     local global_always_run = "VECTOR_ALWAYS_RUN"
+    local global_jump_bias = "VECTOR_JUMP_BIAS"
     local global_coyote_time = "VECTOR_COYOTE_TIME"
     local global_tutorial_list = "VECTOR_TUTORIAL_LIST"
     local global_tutorial_safety = "VECTOR_TUTORIAL_SAFETY"
@@ -30,6 +31,7 @@ function OnWorldPreUpdate()
     pen.c.vector_v_memo = pen.c.vector_v_memo or {}
     pen.c.vector_mnt_mm = pen.c.vector_mnt_mm or {}
     pen.c.vector_coytte = pen.c.vector_coytte or {}
+    pen.c.vector_nrmavg = pen.c.vector_nrmavg or {}
     pen.c.vector_dashmm = pen.c.vector_dashmm or {}
     pen.c.vector_prcisn = pen.c.vector_prcisn or {}
     pen.c.vector_aangle = pen.c.vector_aangle or {}
@@ -365,36 +367,36 @@ function OnWorldPreUpdate()
         local x, y, _, s_x = EntityGetTransform( entity_id )
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
         local gravity = ComponentGetValue2( plat_comp, "pixel_gravity" )/60
-
+        
         pen.t.loop( injections_pre, function( i, injection )
             if( not( ModDoesFileExist( injection ))) then return end
             left, right, jump, run, v_x, v_y, gravity =
                 dofile( injection )( entity_id, { left, right, jump, run }, v_x, v_y, gravity )
         end)
 
-        local did_mount = pen.c.vector_mnt_mm[ entity_id ] or false
+        local did_mantle = pen.c.vector_mnt_mm[ entity_id ] or false
         local flip = s_x < 0; if( left or right ) then flip = left end
         local head_off = ComponentGetValue2( char_comp, "collision_aabb_min_y" )
         local feet_off = ComponentGetValue2( char_comp, "collision_aabb_max_y" )
         local body_off = ComponentGetValue2( char_comp, "collision_aabb_m"..( flip and "in" or "ax" ).."_x" )
-        feet_off, body_off = feet_off - ( did_mount and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
+        feet_off, body_off = feet_off - ( did_mantle and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
 
         local init_speed = tonumber( GlobalsGetValue( global_init_speed, "7" ))
         local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
         local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
         local dash_delay = tonumber( GlobalsGetValue( global_dash_delay, "5" ))
-        local ctime = tonumber( GlobalsGetValue( global_coyote_time, "20" ))
+        local jump_bias = tonumber( GlobalsGetValue( global_jump_bias, "20" ))
+        local ctime = tonumber( GlobalsGetValue( global_coyote_time, "40" ))
         local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
-
+        
         local near_ground = RaytracePlatforms( x, y, x, y + 5 )
         local is_ground = ComponentGetValue2( char_comp, "is_on_ground" )
-        if( is_ground ) then pen.c.vector_coytte[ entity_id ] = frame_num + ctime end
-        is_ground = is_ground or (( pen.c.vector_coytte[ entity_id ] or 0 ) > frame_num )
+        local cdelta = math.max(( pen.c.vector_coytte[ entity_id ] or 0 ) - frame_num, 0 ) + 1
         local is_wall = RaytracePlatforms( x + body_off, y + head_off + 1, x + body_off, y + feet_off )
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
-        
-        --coytte should apply a strength decay curve rather than completely cut off any air control
-        --do swimming manually; jumping angle should be based on surface normal and fully procedural
+        if( is_ground ) then pen.c.vector_coytte[ entity_id ] = frame_num + ctime end
+        is_ground = is_ground or cdelta > 1
+
         --reduce standstill friction if player holds down jump
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
 
@@ -415,11 +417,10 @@ function OnWorldPreUpdate()
         v_x, v_y = v_x + ( pen.c.vector_recoil[ entity_id ][1]), v_y + ( pen.c.vector_recoil[ entity_id ][2])
         if( not( is_mantling ) and did_mantle ) then v_x = v_x + 50*( flip and -1 or 1 ) end
         pen.c.vector_mnt_mm[ entity_id ] = is_mantling
-
-        local strength = is_ground and pen.get_strength( entity_id ) or 0
-        local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
-        if( pen.vld( plat_comp, true ) and ComponentGetValue2( plat_comp, "mJetpackEmitting" )) then
-            strength = ComponentGetValue2( plat_comp, "fly_velocity_x" )
+        
+        local strength = is_ground and math.log( 9*cdelta/ctime + 1, 10 )*pen.get_strength( entity_id ) or 0
+        if( ComponentGetValue2( char_comp, "mJetpackEmitting" )) then
+            strength = ComponentGetValue2( char_comp, "fly_velocity_x" )
         end
 
         local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
@@ -429,10 +430,11 @@ function OnWorldPreUpdate()
         --with this system the bhop momentum seems to decay
         local move_frame = pen.c.vector_dashmm[ entity_id ] or frame_num
         if( left or right ) then
-            -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
-            local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
+            
             local always_run = GlobalsGetValue( global_always_run, "1" ) == "1"
-            if( run == always_run ) then force = force/3 end
+            local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
+            -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
+            if( not( ComponentGetValue2( char_comp, "is_on_ground" )) or run == always_run ) then force = force/3 end
             -- if( will_dash ) then force = 5*force; pen.c.vector_prcisn[ entity_id ] = force end
 
             -- local prec = math.min( 1.25*( pen.c.vector_prcisn[ entity_id ] or init_speed ), 2*top_speed )
@@ -448,12 +450,44 @@ function OnWorldPreUpdate()
             if( old_sign ~= pen.sgn( v_x )) then v_x = 0 end
         else v_x = decay*v_x end
 
-        pen.t.loop( injections_post, function( i, injection )
-            if( not( ModDoesFileExist( injection ))) then return end
-            v_x, v_y = dofile( injection )( entity_id, strength, mass,
-                { left, right, jump, run }, { is_ground, is_wall, is_mantling }, v_x, v_y, gravity )
+        local jump_x, jump_y = 0, 0
+        pen.hallway( function()
+            if( not( is_ground or near_ground ) or did_mantle or is_mantling ) then return end
+
+            local n_frames = 10
+            if( not( pen.vld( pen.c.vector_nrmavg[ entity_id ]))) then
+                pen.c.vector_nrmavg[ entity_id ] = {}
+                for i = 1,n_frames do table.insert( pen.c.vector_nrmavg[ entity_id ], math.rad( 90 )) end
+            end
+
+            --do swimming manually (check if is in liquid through raytracing liquids and comparing to liquidless raytrace)
+            
+            local jump_angle = math.rad( -90 )
+            local n_found, n_x, n_y, n_dist = GetSurfaceNormal( x, y + feet_off + 2, body_off + 5, 40 )
+            if( n_found ) then
+                local n_angle = math.atan2( n_y, n_x )
+                table.remove( pen.c.vector_nrmavg[ entity_id ], 1 )
+                table.insert( pen.c.vector_nrmavg[ entity_id ], n_angle )
+
+                for i = 1,( n_frames - 1 ) do n_angle = n_angle + pen.c.vector_nrmavg[ entity_id ][i] end
+                jump_angle = math.rad( 180 ) + ( n_angle + jump_bias*math.rad( 90 ))/( n_frames + jump_bias )
+                jump_angle = jump_angle + ( flip and -1 or 1 )*math.rad(( left or right ) and 25 or 10 )
+            end
+            
+            local jump_force = 4*strength*pen.rat( mass, strength )
+            jump_x = math.abs( jump_force*math.cos( jump_angle ))
+            jump_y = jump_force*math.sin( jump_angle )
         end)
 
+        pen.t.loop( injections_post, function( i, injection )
+            if( not( ModDoesFileExist( injection ))) then return end
+            v_x, v_y, jump_x, jump_y = dofile( injection )( entity_id, strength, mass,
+                { left, right, jump, run }, { is_ground, is_wall, is_mantling },
+                { v_x, v_y, jump_x, jump_y, gravity })
+        end)
+
+        ComponentSetValue2( plat_comp, "jump_velocity_x", jump_x )
+        ComponentSetValue2( plat_comp, "jump_velocity_y", jump_y )
         ComponentSetValue2( char_comp, "mVelocity", v_x, v_y )
         pen.c.vector_v_memo[ entity_id ] = { v_x, v_y }
         pen.c.vector_recoil[ entity_id ] = { 0, 0 }
@@ -789,7 +823,7 @@ function OnWorldPostUpdate()
             if( not( ModDoesFileExist( injection ))) then return end
             d_r, d_l = dofile( injection )( entity_id, d_r, d_l )
         end)
-        
+
         if( not( is_in ) and is_out and not( is_looking )) then
             local md_x, md_y = ComponentGetValue2( ctrl_comp, "mMouseDelta" )
             local is_holding = math.sqrt( md_x^2 + md_y^2 ) < 10
