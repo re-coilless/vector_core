@@ -359,10 +359,12 @@ function OnWorldPreUpdate()
         if( not( pen.vld( ctrl_comp, true ))) then return end
 
         local frame_num = GameGetFrameNum()
+        local run = ComponentGetValue2( ctrl_comp, "mButtonDownRun" )
         local left = ComponentGetValue2( ctrl_comp, "mButtonDownLeft" )
         local right = ComponentGetValue2( ctrl_comp, "mButtonDownRight" )
-        local jump = ComponentGetValue2( ctrl_comp, "mButtonFrameJump" ) == frame_num
-        local run = ComponentGetValue2( ctrl_comp, "mButtonDownRun" )
+        local slide = ComponentGetValue2( ctrl_comp, "mButtonDownJump" )
+        local jump_frame = ComponentGetValue2( ctrl_comp, "mButtonFrameJump" )
+        local jump = jump_frame == frame_num
         
         local x, y, _, s_x = EntityGetTransform( entity_id )
         local v_x, v_y = ComponentGetValue2( char_comp, "mVelocity" )
@@ -397,8 +399,8 @@ function OnWorldPreUpdate()
         if( is_ground ) then pen.c.vector_coytte[ entity_id ] = frame_num + ctime end
         is_ground = is_ground or cdelta > 1
 
-        --reduce standstill friction if player holds down jump
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
+        --jumping is too strong for human chars
 
         local is_mantling = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
@@ -409,7 +411,7 @@ function OnWorldPreUpdate()
             is_mantling = not( no_space or RaytracePlatforms( x, y + chest_off, check_x, y + chest_off ))
             if( is_mantling ) then v_y = math.max( -math.max( 7*gravity, math.abs( v_x )), v_y - 3*gravity ) end
         end
-
+        
         local x_decay = is_wall and not( did_mantle )
         local y_transfer = is_wall and near_ground and jump
         v_x = x_decay and 0.9*(( pen.c.vector_v_memo[ entity_id ] or {})[1] or 0 ) or v_x
@@ -418,10 +420,13 @@ function OnWorldPreUpdate()
         if( not( is_mantling ) and did_mantle ) then v_x = v_x + 50*( flip and -1 or 1 ) end
         pen.c.vector_mnt_mm[ entity_id ] = is_mantling
         
-        local strength = is_ground and math.log( 9*cdelta/ctime + 1, 10 )*pen.get_strength( entity_id ) or 0
+        local strength = pen.get_strength( entity_id )
+        local is_swimming = not( near_ground ) and RaytraceSurfacesAndLiquiform( x, y, x, y + feet_off )
         if( ComponentGetValue2( char_comp, "mJetpackEmitting" )) then
-            strength = ComponentGetValue2( char_comp, "fly_velocity_x" )
-        end
+            strength = ComponentGetValue2( plat_comp, "fly_velocity_x" )
+        elseif( is_swimming ) then
+            strength = strength*ComponentGetValue2( plat_comp, "swim_extra_horizontal_drag" )
+        else strength = is_ground and math.log( 9*cdelta/ctime + 1, 10 )*strength or 0 end
 
         local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
         mass = ( ComponentGetValue2( char_comp, "is_on_slippery_ground" ) and 2 or 1 )*mass
@@ -430,7 +435,6 @@ function OnWorldPreUpdate()
         --with this system the bhop momentum seems to decay
         local move_frame = pen.c.vector_dashmm[ entity_id ] or frame_num
         if( left or right ) then
-            
             local always_run = GlobalsGetValue( global_always_run, "1" ) == "1"
             local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
             -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
@@ -444,23 +448,22 @@ function OnWorldPreUpdate()
         elseif( frame_num > move_frame ) then pen.c.vector_prcisn[ entity_id ] = init_speed end
         
         if( is_ground ) then
-            local old_sign, k = pen.sgn( v_x ), 10
+            local old_sign, k = pen.sgn( v_x ), slide and 2 or 10
             if( math.abs( v_x ) < bottom_speed ) then k = k*pen.rat( v_x, 2*bottom_speed ) end
-            v_x = v_x - k*pen.sgn( v_x )*math.abs( decay )*pen.rat( mass, strength )
+            v_x = v_x - k*pen.sgn( v_x )*decay*pen.rat( mass, strength )
             if( old_sign ~= pen.sgn( v_x )) then v_x = 0 end
         else v_x = decay*v_x end
 
         local jump_x, jump_y = 0, 0
+        local is_falling = not( is_ground or near_ground )
         pen.hallway( function()
-            if( not( is_ground or near_ground ) or did_mantle or is_mantling ) then return end
+            if( is_falling or did_mantle or is_mantling ) then return end
 
             local n_frames = 10
             if( not( pen.vld( pen.c.vector_nrmavg[ entity_id ]))) then
                 pen.c.vector_nrmavg[ entity_id ] = {}
                 for i = 1,n_frames do table.insert( pen.c.vector_nrmavg[ entity_id ], math.rad( 90 )) end
             end
-
-            --do swimming manually (check if is in liquid through raytracing liquids and comparing to liquidless raytrace)
             
             local jump_angle = math.rad( -90 )
             local n_found, n_x, n_y, n_dist = GetSurfaceNormal( x, y + feet_off + 2, body_off + 5, 40 )
@@ -478,6 +481,14 @@ function OnWorldPreUpdate()
             jump_x = math.abs( jump_force*math.cos( jump_angle ))
             jump_y = jump_force*math.sin( jump_angle )
         end)
+        
+        if( slide ) then
+            local jump_delta = frame_num - jump_frame
+            if( is_swimming and v_y > jump_y ) then v_y = v_y + jump_y*0.05 end
+            if( jump_delta > 5 and jump_delta < 8 ) then
+                v_y = v_y + jump_y*0.1
+            end
+        end
 
         pen.t.loop( injections_post, function( i, injection )
             if( not( ModDoesFileExist( injection ))) then return end
