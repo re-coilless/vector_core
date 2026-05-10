@@ -8,6 +8,7 @@ else return end
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
     
+    local global_peak_stress = "VECTOR_PEAK_STRESS"
     local global_init_speed = "VECTOR_INIT_CHAR_SPEED"
     local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
     local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
@@ -65,23 +66,19 @@ function OnWorldPreUpdate()
         if( not( pen.magic_storage( entity_id, "vector_do_stress", "value_bool" ))) then return end
         local stress = pen.magic_storage( entity_id, "stress", "value_float", nil, 0 )
 
+        local threat = pen.rate_threat( entity_id, 150 )
         pen.t.loop( injections_pre, function( i, injection )
             if( not( ModDoesFileExist( injection ))) then return end
-            stress = dofile( injection )( entity_id, stress )
+            stress, threat = dofile( injection )( entity_id, stress, threat )
         end)
 
-        --apply strength boost
-        --get max_force
-        --save it as stress_force_memo
-        --write updated value to stress_force
-        --if stress_force does not match with current max_force, add delta to stress_force_memo
-        
-        --degrades linearly, is uncapped but above certain values degrades exponentially
+        local peak_stress = tonumber( GlobalsGetValue( global_peak_stress, "1000" ))
+        local max_stress = math.sqrt( threat )*pen.rat( threat, peak_stress )
+        local adrenaline = math.log( math.abs( max_stress - stress ) + 0.01 )*pen.sgn( max_stress - stress )
+        pen.magic_storage( entity_id, "stress", "value_float", math.max( stress + adrenaline, 0 ))
 
-        --check for threats (use threat calc func, threat value progressively increase stress up until some value, the higher the threat, the higher this value)
-        --incoming damage (compare hp values)
-        --continous gunfire (check for fresh hooman-shot projectiles nearby)
-        --total incoming adrenaline value must always increase else the benefits of it will decay
+        --pen.debug_print( threat.."\n"..max_stress.."\n"..adrenaline.."\n"..stress, 150, 50, true )
+        --the actual benefits (such as strength boost) are determined not by raw stress value but by delta
 
         --apply shader effects (extreme stress increases contrast and applies red hue shift)
 
@@ -400,7 +397,7 @@ function OnWorldPreUpdate()
         is_ground = is_ground or cdelta > 1
 
         --if player times jumping with direction key opposite to v_x, flip the sign of v_x
-        --jumping is too strong for human chars
+        --jumping is too strong for human chars + the air control should be stronger for them
 
         local is_mantling = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
