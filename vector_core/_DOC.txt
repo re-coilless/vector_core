@@ -1,0 +1,2 @@
+describe every module
+outline all the additional globals and such

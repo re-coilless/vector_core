@@ -8,12 +8,11 @@ else return end
 function OnWorldPreUpdate()
     dofile_once( "mods/mnee/lib.lua" )
     
+    local global_scroll_flip = "VECTOR_SCROLL_FLIP"
     local global_peak_stress = "VECTOR_PEAK_STRESS"
-    local global_init_speed = "VECTOR_INIT_CHAR_SPEED"
     local global_top_speed = "VECTOR_TOP_CHAR_SPEED"
     local global_bottom_speed = "VECTOR_BOTTOM_CHAR_SPEED"
     local global_friction = "VECTOR_BASELINE_FRICTION"
-    local global_dash_delay = "VECTOR_DASH_DELAY_FRAMES"
     local global_always_run = "VECTOR_ALWAYS_RUN"
     local global_jump_bias = "VECTOR_JUMP_BIAS"
     local global_coyote_time = "VECTOR_COYOTE_TIME"
@@ -33,8 +32,6 @@ function OnWorldPreUpdate()
     pen.c.vector_mnt_mm = pen.c.vector_mnt_mm or {}
     pen.c.vector_coytte = pen.c.vector_coytte or {}
     pen.c.vector_nrmavg = pen.c.vector_nrmavg or {}
-    pen.c.vector_dashmm = pen.c.vector_dashmm or {}
-    pen.c.vector_prcisn = pen.c.vector_prcisn or {}
     pen.c.vector_aangle = pen.c.vector_aangle or {}
     pen.c.vector_aasign = pen.c.vector_aasign or {}
     pen.c.vector_aaagun = pen.c.vector_aaagun or {}
@@ -151,7 +148,6 @@ function OnWorldPreUpdate()
         pen.c.vector_aangle[ entity_id ], pen.c.vector_aasign[ entity_id ] = this_angle, this_sign
 
         --move recoil to the top
-        --mass-based momentum for angular recoil
         --make weapon fly away at high recoil
         --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
 
@@ -287,10 +283,11 @@ function OnWorldPreUpdate()
             local is_guied = GlobalsGetValue( pen.GLOBAL_JPAD_FOCUS..jpad, "" ) ~= ""
             local is_unscrolled = tonumber( GlobalsGetValue( pen.GLOBAL_UNSCROLLER_SAFETY, "0" )) == frame_num
             if( not( is_guied or is_unscrolled )) then
-                local will_change_r = update_key( "next_item", "ChangeItemR" )
-                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( will_change_r ))
-                local will_change_l = update_key( "last_item", "ChangeItemL" )
-                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( will_change_l ))
+                local flip = GlobalsGetValue( global_scroll_flip, "0" ) == "1"
+                local scroll_r = update_key(( flip and "last" or "next" ).."_item", "ChangeItemR" )
+                local scroll_l = update_key(( flip and "next" or "last" ).."_item", "ChangeItemL" )
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemR", pen.b2n( scroll_r ))
+                ComponentSetValue2( ctrl_comp, "mButtonCountChangeItemL", pen.b2n( scroll_l ))
             end
 
             if( pen.c.vector_isjpad[ entity_id ]) then
@@ -380,10 +377,8 @@ function OnWorldPreUpdate()
         local body_off = ComponentGetValue2( char_comp, "collision_aabb_m"..( flip and "in" or "ax" ).."_x" )
         feet_off, body_off = feet_off - ( did_mantle and 0.5 or 3 ), body_off + 2*( flip and -1 or 1 )
 
-        local init_speed = tonumber( GlobalsGetValue( global_init_speed, "7" ))
         local top_speed = tonumber( GlobalsGetValue( global_top_speed, "200" ))
         local bottom_speed = tonumber( GlobalsGetValue( global_bottom_speed, "20" ))
-        local dash_delay = tonumber( GlobalsGetValue( global_dash_delay, "5" ))
         local jump_bias = tonumber( GlobalsGetValue( global_jump_bias, "20" ))
         local ctime = tonumber( GlobalsGetValue( global_coyote_time, "40" ))
         local decay = tonumber( GlobalsGetValue( global_friction, "0.99" ))
@@ -395,8 +390,7 @@ function OnWorldPreUpdate()
         is_wall = is_wall or ComponentGetValue2( char_comp, "mCollidedHorizontally" )
         if( is_ground ) then pen.c.vector_coytte[ entity_id ] = frame_num + ctime end
         is_ground = is_ground or cdelta > 1
-
-        --if player times jumping with direction key opposite to v_x, flip the sign of v_x
+        
         --jumping is too strong for human chars + the air control should be stronger for them
 
         local is_mantling = false
@@ -428,21 +422,12 @@ function OnWorldPreUpdate()
         local mass = pen.get_full_mass( entity_id ) --default is 1 which is considered 40kg
         mass = ( ComponentGetValue2( char_comp, "is_on_slippery_ground" ) and 2 or 1 )*mass
 
-        --dash is too op, add cooldown or something
-        --with this system the bhop momentum seems to decay
-        local move_frame = pen.c.vector_dashmm[ entity_id ] or frame_num
         if( left or right ) then
             local always_run = GlobalsGetValue( global_always_run, "1" ) == "1"
             local force = strength*pen.rat( v_x, top_speed )*pen.rat( mass, strength )
-            -- local will_dash = ( move_frame > frame_num ) and ( move_frame - frame_num < dash_delay )
             if( not( ComponentGetValue2( char_comp, "is_on_ground" )) or run == always_run ) then force = force/3 end
-            -- if( will_dash ) then force = 5*force; pen.c.vector_prcisn[ entity_id ] = force end
-
-            -- local prec = math.min( 1.25*( pen.c.vector_prcisn[ entity_id ] or init_speed ), 2*top_speed )
-            -- if( is_ground ) then pen.c.vector_dashmm[ entity_id ] = frame_num + dash_delay + 5 end
             v_x = v_x + math.min( force, prec or force )*( right and 1 or -1 )
-            -- pen.c.vector_prcisn[ entity_id ] = prec
-        elseif( frame_num > move_frame ) then pen.c.vector_prcisn[ entity_id ] = init_speed end
+        end
         
         if( is_ground ) then
             local old_sign, k = pen.sgn( v_x ), slide and 2 or 10
@@ -455,7 +440,9 @@ function OnWorldPreUpdate()
         local is_falling = not( is_ground or near_ground )
         pen.hallway( function()
             if( is_falling or did_mantle or is_mantling ) then return end
-
+            local dodge = ( right and v_x < 0 ) or ( left and v_x > 0 )
+            if( math.abs( v_x ) > 1 and jump and dodge ) then v_x = -v_x end
+            
             local n_frames = 10
             if( not( pen.vld( pen.c.vector_nrmavg[ entity_id ]))) then
                 pen.c.vector_nrmavg[ entity_id ] = {}
@@ -740,7 +727,7 @@ function OnWorldPostUpdate()
     local function vector_anim( entity_id )
         -- Rib's char animation concept, make sure stains work with it
         -- check whether stains do need a comp per spritecomp or if it works as is
-        -- should also include fully procedural animation system (manipulates child objects tagged as limbs)
+        -- should also include fully procedural animation system (manipulates child objects tagged as limbs, including madness combat hands)
     end
 
     --one frame delay is from SpriteComp being updated by the engine
@@ -797,8 +784,7 @@ function OnWorldPostUpdate()
 
         pen.magic_storage( entity_id, "vector_anim_event_frame", "value_int", GameGetFrameNum() + 1 )
     end
-
-    --try moving it to preupdate if force overriding the cam pos is impossible with this system
+    
     local function vector_camera( entity_id, injections_pre, injections_post )
         if( pen.magic_storage( entity_id, "vector_no_camera", "value_bool" )) then return end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "PlatformShooterPlayerComponent" )
