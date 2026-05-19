@@ -152,12 +152,12 @@ function OnWorldPreUpdate()
         --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
 
         local eid_x = arm_id.."x"
-        local ix = pen.estimate( eid_x, 0, "exp"..arm_speed )
+        local ix = pen.estimate( eid_x, 0, "exp"..( 1/arm_speed ))
         local eid_y = arm_id.."y"
-        local iy = pen.estimate( eid_y, 0, "exp"..arm_speed )
+        local iy = pen.estimate( eid_y, 0, "exp"..( 1/arm_speed ))
         local eid_r = arm_id.."r"
         pen.c.estimator_memo[ eid_r ] = ( pen.c.estimator_memo[ eid_r ] or 0 ) + aim_drift
-        local r = pen.estimate( eid_r, 0, "exp"..(( is_advanced and 0.75 or 1 )*hand_speed ))
+        local r = pen.estimate( eid_r, 0, "exp"..( 1/(( is_advanced and 0.75 or 1 )*hand_speed )))
 
         local trans_comp = EntityGetFirstComponentIncludingDisabled( arm_id, "InheritTransformComponent" )
         local _, _, isx, isy, ir = ComponentGetValue2( trans_comp, "Transform" )
@@ -392,6 +392,7 @@ function OnWorldPreUpdate()
         is_ground = is_ground or cdelta > 1
         
         --jumping is too strong for human chars + the air control should be stronger for them
+        --running backwards is playing wrong anim due to vanilla cancer
 
         local is_mantling = false
         if((( left and s_x < 0 ) or ( right and s_x > 0 )) and is_wall ) then
@@ -438,7 +439,7 @@ function OnWorldPreUpdate()
 
         local jump_x, jump_y = 0, 0
         local is_falling = not( is_ground or near_ground )
-        pen.hallway( function()
+        pen.hallway( function() --biasing should be done based on mouse pos (do not allow to much deviation though)
             if( is_falling or did_mantle or is_mantling ) then return end
             local dodge = ( right and v_x < 0 ) or ( left and v_x > 0 )
             if( math.abs( v_x ) > 1 and jump and dodge ) then v_x = -v_x end
@@ -560,7 +561,7 @@ function OnWorldPreUpdate()
             local screen_x, screen_y = pen.get_screen_data()
             local pic_x, pic_y = unpack( pen.ghf( step.zone_xy, { screen_x, screen_y }))
             local zone_w, zone_h = unpack( pen.ghf( step.zone_wh, { screen_x, screen_y }))
-            local alpha = pen.estimate( "vector_tutorial_a", { 100, 0 }, "exp5" )/100
+            local alpha = pen.estimate( "vector_tutorial_a", { 100, 0 }, "exp0.2" )/100
             pic_x = pen.estimate( "vector_tutorial_x", { pic_x, -5 }, "wgt0.5" )
             pic_y = pen.estimate( "vector_tutorial_y", { pic_y, -5 }, "wgt0.5" )
             zone_w = pen.estimate( "vector_tutorial_w", { zone_w, screen_x }, "wgt0.5" )
@@ -711,6 +712,7 @@ function OnWorldPreUpdate()
     end)
 
     vector_tutorial() -- centralized tutorial framework
+    --custom penman-based dialog system
 
 	pen.new.builder( true )
 end
@@ -784,7 +786,7 @@ function OnWorldPostUpdate()
 
         pen.magic_storage( entity_id, "vector_anim_event_frame", "value_int", GameGetFrameNum() + 1 )
     end
-    
+
     local function vector_camera( entity_id, injections_pre, injections_post )
         if( pen.magic_storage( entity_id, "vector_no_camera", "value_bool" )) then return end
         local plat_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "PlatformShooterPlayerComponent" )
