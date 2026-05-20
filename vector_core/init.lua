@@ -152,12 +152,12 @@ function OnWorldPreUpdate()
         --two handed weapons (if the gun has front grip hotspot, 1.5*h_aim and 2*h_recoil if it is not enabled)
 
         local eid_x = arm_id.."x"
-        local ix = pen.estimate( eid_x, 0, "exp"..( 1/arm_speed ))
+        local ix = pen.estimate( eid_x, 0, { "exp", 1/arm_speed })
         local eid_y = arm_id.."y"
-        local iy = pen.estimate( eid_y, 0, "exp"..( 1/arm_speed ))
+        local iy = pen.estimate( eid_y, 0, { "exp", 1/arm_speed })
         local eid_r = arm_id.."r"
         pen.c.estimator_memo[ eid_r ] = ( pen.c.estimator_memo[ eid_r ] or 0 ) + aim_drift
-        local r = pen.estimate( eid_r, 0, "exp"..( 1/(( is_advanced and 0.75 or 1 )*hand_speed )))
+        local r = pen.estimate( eid_r, 0, { "exp", 1/(( is_advanced and 0.75 or 1 )*hand_speed )})
 
         local trans_comp = EntityGetFirstComponentIncludingDisabled( arm_id, "InheritTransformComponent" )
         local _, _, isx, isy, ir = ComponentGetValue2( trans_comp, "Transform" )
@@ -561,11 +561,12 @@ function OnWorldPreUpdate()
             local screen_x, screen_y = pen.get_screen_data()
             local pic_x, pic_y = unpack( pen.ghf( step.zone_xy, { screen_x, screen_y }))
             local zone_w, zone_h = unpack( pen.ghf( step.zone_wh, { screen_x, screen_y }))
-            local alpha = pen.estimate( "vector_tutorial_a", { 100, 0 }, "exp0.2" )/100
-            pic_x = pen.estimate( "vector_tutorial_x", { pic_x, -5 }, "wgt0.5" )
-            pic_y = pen.estimate( "vector_tutorial_y", { pic_y, -5 }, "wgt0.5" )
-            zone_w = pen.estimate( "vector_tutorial_w", { zone_w, screen_x }, "wgt0.5" )
-            zone_h = pen.estimate( "vector_tutorial_h", { zone_h, screen_y }, "wgt0.5" )
+            local alpha = pen.estimate( "vector_tutorial_a", { 100, 0 }, { "exp", 0.2 })/100
+
+            pic_x = pen.estimate( "vector_tutorial_x", { pic_x, -5 }, "wgt" )
+            pic_y = pen.estimate( "vector_tutorial_y", { pic_y, -5 }, "wgt" )
+            zone_w = pen.estimate( "vector_tutorial_w", { zone_w, screen_x }, "wgt" )
+            zone_h = pen.estimate( "vector_tutorial_h", { zone_h, screen_y }, "wgt" )
 
             local function fog( pic_x, pic_y, zone_w, zone_h, screen_x, screen_y, alpha, density, can_click )
                 density = density or 0.75
@@ -604,14 +605,14 @@ function OnWorldPreUpdate()
                     title_x = pen.get_text_dims( title, true )/2 + 5
                 end
 
-                pen.new.text_shad( pen.estimate( "vector_tutorial_t", { title_x, -100 }, "wgt0.5" ), 5,
+                pen.new.text_shad( pen.estimate( "vector_tutorial_t", { title_x, -100 }, "wgt" ), 5,
                     pen.Z.TUTORIAL_TIPS, title, { color = pen.P.HRMS.BLUE_3, is_centered_x = true, alpha = alpha })
                 
                 local is_top = false
                 local name = "{>color>{{-}|HRMS|GREY_5|{-}"..pen.magic_translate( step.name ).."}<color<}"
                 local desc = name.."\n"..pen.magic_translate( step.desc )
                 local desc_w, desc_h = unpack( pen.get_tip_dims( desc, math.max( zone_w, 150 ), -1, -2 ))
-                local text_anim = pen.estimate( "vector_tutorial_o", { 0, 2*screen_x }, "wgt0.4" )
+                local text_anim = pen.estimate( "vector_tutorial_o", { 0, 2*screen_x }, { "wgt", 0.4 })
                 local t_x, t_y = pic_x + ( pic_x < screen_x/2 and -1 or 1 )*text_anim + 2, pic_y + zone_h + 2
                 if( pic_x + desc_w + 4 > screen_x ) then t_x = t_x - ( pic_x + desc_w + 4 - screen_x ) end
                 if( t_y + desc_h + 9 > screen_y ) then is_top, t_y = true, pic_y - desc_h - 4 end
@@ -835,8 +836,8 @@ function OnWorldPostUpdate()
         if( is_in ) then d_l = d_l/25 elseif( is_out ) then d_l = off_x/3 + d_l/10 else d_l, speed = d_l/4, 20 end
 
         local ratio = is_looking and off_y/off_x or 1
-        local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), "wgt0.1" )
-        local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + ratio*d_l*math.sin( d_r ), "wgt0.1" )
+        local c_x = pen.estimate( "vector_cam_x_"..entity_id, x + d_l*math.cos( d_r ), { "wgt", 0.1 })
+        local c_y = pen.estimate( "vector_cam_y_"..entity_id, y + ratio*d_l*math.sin( d_r ), { "wgt", 0.1 })
 
         --do straightforward split-screen system
         local is_right = false--GameGetFrameNum()%2 == 1
