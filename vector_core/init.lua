@@ -547,13 +547,13 @@ function OnWorldPreUpdate()
             pen.c.vector_t_intr = pen.c.vector_t_intr or { module_id, frame_num + 5 }
             if( pen.c.vector_t_intr[1] ~= module_id or pen.c.vector_t_intr[2] < frame_num ) then
                 pen.c.vector_t_intr[1] = module_id
-                pen.c.estimator_memo[ "vector_tutorial_a" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_t" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_x" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_y" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_w" ] = nil
-                pen.c.estimator_memo[ "vector_tutorial_h" ] = nil
+                pen.estimate( "vector_tutorial_a", true )
+                pen.estimate( "vector_tutorial_o", true )
+                pen.estimate( "vector_tutorial_t", true )
+                pen.estimate( "vector_tutorial_x", true )
+                pen.estimate( "vector_tutorial_y", true )
+                pen.estimate( "vector_tutorial_w", true )
+                pen.estimate( "vector_tutorial_h", true )
             end
             
             pen.c.vector_t_intr[2] = frame_num + 5
@@ -654,7 +654,7 @@ function OnWorldPreUpdate()
                     "mods/vector_core/back"..( is_first and "_" or "" )..".png", { auid = "vector_tutorial_back", jpad = true })
                 if( go_back and not( is_first )) then
                     pen.play_sound( pen.S.VNL.SELECT )
-                    pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
+                    pen.estimate( "vector_tutorial_o", true )
                     progress_local[ module_id ] = math.max(( progress_local[ module_id ] or 1 ) - 1, 1 )
                     GlobalsSetValue( global_tutorial_progress, pen.t.pack( pen.t.unarray( progress_local )))
                 end
@@ -667,7 +667,7 @@ function OnWorldPreUpdate()
                     "mods/vector_core/next.png", { auid = "vector_tutorial_next", jpad = true })
                 if( is_done ) then
                     pen.play_sound( pen.S.VNL.CLICK )
-                    pen.c.estimator_memo[ "vector_tutorial_o" ] = nil
+                    pen.estimate( "vector_tutorial_o", true )
                 end
 
                 mnee.ignore_zone_mode = nil
