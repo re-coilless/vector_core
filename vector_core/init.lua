@@ -342,7 +342,7 @@ function OnWorldPreUpdate()
         pen.c.vector_cntrls[ entity_id ] = true
     end
 
-    local function vector_momentum( entity_id, injections_pre, injections_post )
+    local function vector_momentum( entity_id, injections_pre, injections_post ) --try making jumping always available except to get it back you gotta touch ground
         pen.c.vector_recoil[ entity_id ] = pen.c.vector_recoil[ entity_id ] or { 0, 0 }
         if( not( pen.magic_storage( entity_id, "vector_do_momentum", "value_bool" ))) then return end
         local char_comp = EntityGetFirstComponentIncludingDisabled( entity_id, "CharacterDataComponent" )
@@ -498,7 +498,7 @@ function OnWorldPreUpdate()
         end)
     end
 
-    local function vector_tutorial()
+    local function vector_tutorial() --add a query node that allows for effortless "you wanna know?" with "never ask again" and "skip" options
         local queue = pen.t.pack( GlobalsGetValue( global_tutorial_list, "" ))
         if( not( pen.vld( queue ))) then return end
         
@@ -874,8 +874,4 @@ function OnWorldPostUpdate()
             func( entity_id, funcs_pre, funcs_post )
         end)
     end)
-end
-
-function OnPlayerSpawned( hooman ) --repackage this as a part of Noita Overhaul
-    -- EntityAddTag( hooman, "vector_ctrl" )
 end

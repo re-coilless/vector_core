@@ -100,7 +100,7 @@ _BINDINGS[ "vector_core" ] = {
 		is_weak = true,
 		name = "Throw",
 		desc = "Disposes of the item in hand.",
-		keys = {[ "t" ] = 1 },
+		keys = {[ "mouse_left" ] = 1 },
 		keys_alt = {[ "1gpd_b" ] = 1 },
 	},
 	kick = {
