@@ -2,6 +2,37 @@ _MNEEDATA[ "vector_core" ] = {
 	order_id = 1.1,
 	name = "HermeS Vector",
 	desc = "An assortment of actions to control your character.",
+
+	setup_modes = {
+		{
+			id = "MPR",
+			btn = "MPR",
+			name = "Multiplayer Ready",
+			desc = "Removes all gamepad binds to allow for an easier multiplayer integration.",
+			binds = {
+				movement_v = { "is_axis", "w", "s" },
+				movement_h = { "is_axis", "a", "d" },
+				aim_v = { "is_axis", "NOPE", "NOPE" },
+				aim_h = { "is_axis", "NOPE", "NOPE" },
+				focus_aim = {["_"] = 1 },
+				halt_autoaim = {["_"] = 1 },
+
+				run = {[ "left_shift" ] = 1 },
+				jump = {[ "space" ] = 1 },
+				fly = {[ "w" ] = 1 },
+
+				interact = {[ "e" ] = 1 },
+				throw = {[ "mouse_left" ] = 1 },
+				kick = {[ "f" ] = 1 },
+
+				fire = {[ "mouse_left" ] = 1 },
+				fire_alt = {[ "mouse_right" ] = 1 },
+				inventory = {[ "tab" ] = 1 },
+				next_item = {[ "mouse_wheel_up" ] = 1 },
+				last_item = {[ "mouse_wheel_down" ] = 1 },
+			},
+		},
+	}
 }
 
 _BINDINGS[ "vector_core" ] = {
@@ -54,14 +85,14 @@ _BINDINGS[ "vector_core" ] = {
 		is_weak = true,
 		name = "Focus Aim",
 		desc = "Shifts the camera towards the aiming direction.",
-		keys = {[ "1gpd_down" ] = 1, },
+		keys = {[ "1gpd_down" ] = 1 },
 	},
 	halt_autoaim = {
 		order_id = "ad",
 		is_weak = true,
 		name = "Halt Autoaim",
 		desc = "Stops aim assists from messing up the inputs while is held.",
-		keys = {[ "1gpd_up" ] = 1, },
+		keys = {[ "1gpd_up" ] = 1 },
 	},
 	
 	run = {
