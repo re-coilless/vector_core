@@ -826,7 +826,8 @@ function OnWorldPostUpdate()
             local is_holding = math.sqrt( md_x^2 + md_y^2 ) < 10
             local hold_frames = is_holding and pen.c.vector_aimdlt[ entity_id ] or 0
             
-            is_out = hold_frames > 20
+            is_out = math.abs( m_x - s_x ) > 100
+            is_out = is_out and hold_frames > 20
             pen.c.vector_aimzom[ entity_id ] = is_out
             pen.c.vector_aimdlt[ entity_id ] = hold_frames + 1
         else pen.c.vector_aimdlt[ entity_id ] = 0 end
